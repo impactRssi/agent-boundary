@@ -4,21 +4,33 @@ Reproducible and **offline by default**. A benchmark that needs the network is
 a benchmark whose numbers cannot be reproduced by a reader, and a number a
 reader cannot reproduce is a claim, not a measurement.
 
-Empty until nodes N-23 and N-24.
+```bash
+uv run python benchmarks/harness.py
+uv run python benchmarks/harness.py --json benchmarks/results.json
+```
 
-## What will be published
+Latest committed run: [`results.json`](results.json). The measured figures are
+reproduced in the [README](../README.md#6-measured-results) with their caveats.
 
-Each metric is published with the conditions it was measured under, **in the
-same sentence**. The caveat is what makes the number credible — "100% blocked
-on a hand-curated synthetic corpus of 30 payloads across 7 carrier types" is a
-stronger signal than "100% blocked".
+## The caveat on the false-refusal rate — read this one
 
-| Metric | Node |
-|---|---|
-| Injection corpus: attempted / blocked, by carrier type | N-17, reported by N-23 |
-| False-refusal rate on the benign-task corpus — the control's cost | N-24 |
-| Broker overhead per tool call, in milliseconds | N-23 |
-| Budget-exhaustion behaviour at the cap, and that it fails closed | N-23 |
+The measured false-refusal rate is **0/25**, and a zero is exactly the kind of
+number that should make a reader suspicious.
+
+**I wrote the benign corpus, and I wrote it knowing what the controls check.**
+That is a materially weaker claim than a rate measured against traffic someone
+else generated, and weaker again than one measured against production. The
+honest reading of 0/25 is "no benign task I thought of was refused", not "the
+control has no cost".
+
+The corpus deliberately includes cases near a boundary — a path that dips
+through `..` and returns inside the root, an allowlisted host on a non-default
+port, a filename containing a `..` substring that is not a traversal, uppercase
+hosts, unicode filenames — because a rate measured only on obviously-safe calls
+measures nothing. It is still a corpus of my own construction.
+
+Reported here rather than buried: this is the number most likely to move once
+someone points the broker at real work.
 
 ## Rules
 

@@ -218,9 +218,11 @@ is marketing.
 4. **An allowlisted egress host can be an exfiltration channel** if it accepts
    attacker-readable content. Narrowing the allowlist is the operator's lever.
 5. **No defence against a malicious operator**, by design.
-6. **The benign-task corpus is synthetic.** The false-refusal rate is measured
-   against tasks we wrote, which is a weaker claim than one measured against
-   production traffic, and is reported as such.
+6. **The benign-task corpus is synthetic and self-authored.** The measured
+   false-refusal rate (0/25) is against tasks we wrote, knowing what the
+   controls check. That is a weaker claim than one measured against traffic
+   someone else generated, weaker again than production, and is reported as
+   such wherever the number appears.
 7. **No third-party review** at time of writing.
 
 ---

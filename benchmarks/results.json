@@ -1,0 +1,92 @@
+{
+  "conditions": "Python 3.13.13 on Darwin/arm64, offline, synthetic corpora, single process, no warm cache",
+  "injection_corpus": {
+    "attempted": 36,
+    "blocked": 36,
+    "by_carrier": {
+      "dependency_readme": {
+        "attempted": 3,
+        "blocked": 3
+      },
+      "error_message": {
+        "attempted": 3,
+        "blocked": 3
+      },
+      "filename": {
+        "attempted": 4,
+        "blocked": 4
+      },
+      "git_commit_message": {
+        "attempted": 3,
+        "blocked": 3
+      },
+      "html_page": {
+        "attempted": 6,
+        "blocked": 6
+      },
+      "json_api_response": {
+        "attempted": 4,
+        "blocked": 4
+      },
+      "pdf_document": {
+        "attempted": 3,
+        "blocked": 3
+      },
+      "shared_drive_document": {
+        "attempted": 4,
+        "blocked": 4
+      },
+      "ticket_description": {
+        "attempted": 6,
+        "blocked": 6
+      }
+    },
+    "attacks_covered": [
+      "A1",
+      "A2",
+      "A3",
+      "A4",
+      "A5",
+      "A6",
+      "A7",
+      "A8",
+      "A9"
+    ],
+    "blocked_for_the_wrong_reason": []
+  },
+  "false_refusals": {
+    "tasks": 25,
+    "authorised": 25,
+    "falsely_refused": 0,
+    "false_refusal_rate": 0.0,
+    "refusals": [],
+    "corpus": "synthetic, hand-written, 25 tasks; several deliberately near a boundary"
+  },
+  "overhead": {
+    "iterations": 2000,
+    "mean_ms": 0.1162,
+    "median_ms": 0.1104,
+    "p95_ms": 0.1298,
+    "p99_ms": 0.1515,
+    "max_ms": 0.3275,
+    "measures": "authorisation only: scope resolution, schema validation, path confinement, egress check, budget accounting, approval lookup. Excludes ingest and the handler's own work."
+  },
+  "cap_behaviour": {
+    "call_cap": {
+      "attempts": 10,
+      "authorised_before_cap": 3,
+      "refusal_reasons": {
+        "budget_exhausted": 7
+      },
+      "stayed_closed": true
+    },
+    "cost_cap": {
+      "attempts": 10,
+      "authorised_before_cap": 3,
+      "refusal_reasons": {
+        "budget_exhausted": 7
+      },
+      "stayed_closed": true
+    }
+  }
+}
