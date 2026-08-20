@@ -15,3 +15,5 @@ expect to have been argued.
 | [0002](ADR-0002-per-task-tool-scoping.md) | Per-task tool scoping over a global registry | Accepted |
 | [0003](ADR-0003-tool-output-is-data.md) | Tool output is never re-interpreted as instruction | Accepted |
 | [0004](ADR-0004-human-approval-for-irreversible-effects.md) | Out-of-band human approval for irreversible effects | Accepted |
+| [0005](ADR-0005-python-and-mcp-as-reference-runtime.md) | Python and MCP as the reference runtime | Accepted |
+| [0006](ADR-0006-adversarial-suite-is-a-separate-blocking-job.md) | The adversarial suite is a separate, guarded, blocking job | Accepted |

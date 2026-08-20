@@ -1,0 +1,137 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "agent-boundary"
+version = "0.1.0.dev0"
+description = "A deterministic tool-call broker that bounds what an LLM agent can actually do."
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.11"
+authors = [{ name = "Tom Durand-Gasselin" }]
+keywords = ["llm", "agent", "security", "prompt-injection", "mcp", "authorization"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "Intended Audience :: System Administrators",
+  "License :: OSI Approved :: Apache Software License",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Security",
+]
+dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/impactRssi/agent-boundary"
+Source = "https://github.com/impactRssi/agent-boundary"
+"Threat model" = "https://github.com/impactRssi/agent-boundary/blob/main/docs/THREAT_MODEL.md"
+"Security policy" = "https://github.com/impactRssi/agent-boundary/blob/main/SECURITY.md"
+
+[dependency-groups]
+dev = [
+  "pytest>=8.0",
+  "pytest-cov>=5.0",
+  "ruff>=0.6",
+  "mypy>=1.11",
+  "bandit>=1.7",
+  "pip-audit>=2.7",
+]
+
+# ---------------------------------------------------------------------------
+# Packaging
+# ---------------------------------------------------------------------------
+[tool.hatch.build.targets.wheel]
+packages = ["src/agentboundary"]
+
+# ---------------------------------------------------------------------------
+# Tests
+#
+# The `security` marker selects the adversarial subset. That subset runs as a
+# separate, blocking CI step -- see ADR-0006 and .github/workflows/ci.yml.
+# `--strict-markers` means a typo in a marker name fails the run instead of
+# silently deselecting the test it was meant to select.
+# ---------------------------------------------------------------------------
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "-ra --strict-markers --strict-config"
+markers = [
+  "security: adversarial payload asserting the broker refused a call",
+  "e2e: exercises the assembled system over a real transport",
+  "gui: drives the audit-trace viewer in a real browser",
+]
+
+[tool.coverage.run]
+source = ["agentboundary"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
+# Raised toward 90 as the broker lands. The authorisation path itself is held
+# at 100% by the unit tier; this global floor is the weaker, whole-package
+# guarantee.
+fail_under = 80
+exclude_lines = ["pragma: no cover", "if TYPE_CHECKING:", "raise NotImplementedError"]
+
+# ---------------------------------------------------------------------------
+# Lint and format
+# ---------------------------------------------------------------------------
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = [
+  "E", "W",    # pycodestyle
+  "F",         # pyflakes
+  "I",         # import sorting
+  "B",         # bugbear
+  "S",         # flake8-bandit
+  "C4",        # comprehensions
+  "SIM",       # simplify
+  "PTH",       # prefer pathlib -- path handling is security-relevant here
+  "RUF",       # ruff-specific
+  "ANN",       # annotations
+  "TID",       # tidy imports
+]
+ignore = [
+  "ANN401",    # explicit Any is sometimes the honest type at a trust boundary
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Adversarial fixtures contain deliberately hostile strings and hardcoded
+# sample paths. Flagging them as findings would train reviewers to ignore the
+# scanner, which is worse than the noise.
+"tests/**" = ["S101", "S105", "S106", "S108", "ANN"]
+
+[tool.ruff.lint.flake8-tidy-imports]
+ban-relative-imports = "parents"
+
+# ---------------------------------------------------------------------------
+# Types
+# ---------------------------------------------------------------------------
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_unreachable = true
+warn_return_any = true
+disallow_any_explicit = false
+files = ["src", "tests"]
+
+# Tests are held to the same strictness as the package. A test that is not
+# type-checked is a test whose assertions can drift from the interface it
+# claims to pin down.
+
+# ---------------------------------------------------------------------------
+# SAST
+#
+# The project's own SAST must return zero high-severity findings against
+# itself. Test fixtures are excluded because they are hostile by design.
+# ---------------------------------------------------------------------------
+[tool.bandit]
+exclude_dirs = ["tests", "benchmarks", ".venv"]

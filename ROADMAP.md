@@ -91,7 +91,7 @@ findings against itself.
   zero-collect or skip, SAST, dependency audit, secret scan. All blocking.
 - **Tests** U (the zero-collect guard is itself tested) · A n/a · E n/a ·
   G n/a — no interface at this node.
-- [ ] Merged
+- [x] Merged
 
 ---
 
