@@ -1,5 +1,9 @@
 # Roadmap
 
+**All 26 nodes merged. `v0.1.0` released.** The graph below is kept as the
+record of how the work was sequenced, and is where the next phase's nodes will
+be added.
+
 Work is a directed acyclic graph of nodes, not a list. Phases below are a
 readable projection of the graph; the graph is what governs sequencing. See
 [`docs/WORKING_METHODS.md`](docs/WORKING_METHODS.md) §2.
@@ -310,8 +314,10 @@ under, and the limitations are specific.
 - **Owner** Technical lead · **Depends on** N-20, N-25 · **Invariant** none
 - **Exit** CycloneDX SBOM generated in CI and attached, artifacts signed,
   tagged `v0.1.0`. An untagged repository looks unfinished.
-- **Tests** E · others n/a.
-- [ ] Merged
+- **Tests** E · others n/a. The release workflow re-runs the full gate at the
+  tagged commit: CI having passed on the branch is not the same statement as
+  the tag being releasable.
+- [x] Merged
 
 ---
 

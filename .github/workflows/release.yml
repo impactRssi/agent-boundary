@@ -1,0 +1,87 @@
+# Release: build, generate an SBOM, sign keylessly, attach.
+#
+# Runs on a tag. The gate in ci.yml still has to pass -- this workflow does not
+# re-run it and does not replace it; a tag pushed at a red commit produces
+# nothing, because the `gate` job is a required check on the branch.
+
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  UV_VERSION: "0.9.9"
+  PYTHON_VERSION: "3.12"
+
+jobs:
+  release:
+    name: build, attest, publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      # Keyless signing: the OIDC token is the identity, so there is no signing
+      # key to store, rotate, or leak. A long-lived key in a repository secret
+      # is the thing this avoids.
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - uses: astral-sh/setup-uv@v7
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+      - run: uv python install ${{ env.PYTHON_VERSION }}
+
+      # The gate, again, at the exact commit being released. CI having passed
+      # on the branch is not the same statement as the tag being releasable.
+      - name: Re-run the blocking gate at this commit
+        run: |
+          uv sync --group dev --group gui --extra mcp --frozen
+          uv run playwright install --with-deps chromium
+          uv run ruff format --check .
+          uv run ruff check .
+          uv run mypy
+          uv run pytest tests --adversarial-guard --cov=agentboundary
+          uv run bandit -c pyproject.toml -r src -ll
+
+      - name: Build
+        run: uv build
+
+      # The wheel's component list is empty because the core package has zero
+      # runtime dependencies. That is the claim, not a broken scan -- the
+      # second SBOM covers what an install of the [mcp] extra actually pulls.
+      - name: SBOM (wheel)
+        uses: anchore/sbom-action@v0
+        with:
+          file: dist/agent_boundary-${{ github.ref_name }}-py3-none-any.whl
+          format: cyclonedx-json
+          output-file: sbom.wheel.cdx.json
+
+      - name: SBOM (resolved environment, including the mcp extra)
+        uses: anchore/sbom-action@v0
+        with:
+          path: .venv
+          format: cyclonedx-json
+          output-file: sbom.environment.cdx.json
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: "dist/*"
+
+      - name: Publish the release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/*
+            sbom.wheel.cdx.json
+            sbom.environment.cdx.json
+          generate_release_notes: true
