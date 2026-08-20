@@ -1,0 +1,325 @@
+[
+  {
+    "id": "benign-01",
+    "label": "read a file in the root",
+    "tool_scope": [
+      "fs.read"
+    ],
+    "egress_allowlist": [],
+    "tool_name": "fs.read",
+    "arguments": {
+      "path": "runbook.md"
+    }
+  },
+  {
+    "id": "benign-02",
+    "label": "read a nested file",
+    "tool_scope": [
+      "fs.read"
+    ],
+    "egress_allowlist": [],
+    "tool_name": "fs.read",
+    "arguments": {
+      "path": "docs/policy.md"
+    }
+  },
+  {
+    "id": "benign-03",
+    "label": "list tickets",
+    "tool_scope": [
+      "tickets.list"
+    ],
+    "egress_allowlist": [],
+    "tool_name": "tickets.list",
+    "arguments": {}
+  },
+  {
+    "id": "benign-04",
+    "label": "read one ticket",
+    "tool_scope": [
+      "tickets.get"
+    ],
+    "egress_allowlist": [],
+    "tool_name": "tickets.get",
+    "arguments": {
+      "ticket_id": 4821
+    }
+  },
+  {
+    "id": "benign-05",
+    "label": "fetch an allowlisted host",
+    "tool_scope": [
+      "http.get"
+    ],
+    "egress_allowlist": [
+      "docs.internal"
+    ],
+    "tool_name": "http.get",
+    "arguments": {
+      "url": "https://docs.internal/runbook"
+    }
+  },
+  {
+    "id": "benign-06",
+    "label": "path with a redundant ./ segment",
+    "tool_scope": [
+      "fs.read"
+    ],
+    "egress_allowlist": [],
+    "tool_name": "fs.read",
+    "arguments": {
+      "path": "./runbook.md"
+    }
+  },
+  {
+    "id": "benign-07",
+    "label": "path that dips and returns inside the root",
+    "tool_scope": [
+      "fs.read"
+    ],
+    "egress_allowlist": [],
+    "tool_name": "fs.read",
+    "arguments": {
+      "path": "docs/../runbook.md"
+    }
+  },
+  {
+    "id": "benign-08",
+    "label": "deeply nested path",
+    "tool_scope": [
+      "fs.read"
+    ],
+    "egress_allowlist": [],
+    "tool_name": "fs.read",
+    "arguments": {
+      "path": "a/b/c/d/e/deep.md"
+    }
+  },
+  {
+    "id": "benign-09",
+    "label": "filename containing a dot-dot substring but no traversal",
+    "tool_scope": [
+      "fs.read"
+    ],
+    "egress_allowlist": [],
+    "tool_name": "fs.read",
+    "arguments": {
+      "path": "release..notes.md"
+    }
+  },
+  {
+    "id": "benign-10",
+    "label": "allowlisted host on a non-default port",
+    "tool_scope": [
+      "http.get"
+    ],
+    "egress_allowlist": [
+      "docs.internal"
+    ],
+    "tool_name": "http.get",
+    "arguments": {
+      "url": "https://docs.internal:8443/runbook"
+    }
+  },
+  {
+    "id": "benign-11",
+    "label": "allowlisted host with a query string",
+    "tool_scope": [
+      "http.get"
+    ],
+    "egress_allowlist": [
+      "docs.internal"
+    ],
+    "tool_name": "http.get",
+    "arguments": {
+      "url": "https://docs.internal/search?q=password+reset"
+    }
+  },
+  {
+    "id": "benign-12",
+    "label": "allowlisted host over plain http",
+    "tool_scope": [
+      "http.get"
+    ],
+    "egress_allowlist": [
+      "docs.internal"
+    ],
+    "tool_name": "http.get",
+    "arguments": {
+      "url": "http://docs.internal/runbook"
+    }
+  },
+  {
+    "id": "benign-13",
+    "label": "uppercase host, allowlisted lowercase",
+    "tool_scope": [
+      "http.get"
+    ],
+    "egress_allowlist": [
+      "docs.internal"
+    ],
+    "tool_name": "http.get",
+    "arguments": {
+      "url": "https://DOCS.internal/runbook"
+    }
+  },
+  {
+    "id": "benign-14",
+    "label": "ticket id at the schema minimum",
+    "tool_scope": [
+      "tickets.get"
+    ],
+    "egress_allowlist": [],
+    "tool_name": "tickets.get",
+    "arguments": {
+      "ticket_id": 1
+    }
+  },
+  {
+    "id": "benign-15",
+    "label": "large but in-range ticket id",
+    "tool_scope": [
+      "tickets.get"
+    ],
+    "egress_allowlist": [],
+    "tool_name": "tickets.get",
+    "arguments": {
+      "ticket_id": 999999
+    }
+  },
+  {
+    "id": "benign-16",
+    "label": "multi-tool task, filesystem leg",
+    "tool_scope": [
+      "fs.read",
+      "http.get"
+    ],
+    "egress_allowlist": [
+      "docs.internal"
+    ],
+    "tool_name": "fs.read",
+    "arguments": {
+      "path": "runbook.md"
+    }
+  },
+  {
+    "id": "benign-17",
+    "label": "multi-tool task, network leg",
+    "tool_scope": [
+      "fs.read",
+      "http.get"
+    ],
+    "egress_allowlist": [
+      "docs.internal"
+    ],
+    "tool_name": "http.get",
+    "arguments": {
+      "url": "https://docs.internal/x"
+    }
+  },
+  {
+    "id": "benign-18",
+    "label": "file with unicode in the name",
+    "tool_scope": [
+      "fs.read"
+    ],
+    "egress_allowlist": [],
+    "tool_name": "fs.read",
+    "arguments": {
+      "path": "réponse-client.md"
+    }
+  },
+  {
+    "id": "benign-19",
+    "label": "file with a space in the name",
+    "tool_scope": [
+      "fs.read"
+    ],
+    "egress_allowlist": [],
+    "tool_name": "fs.read",
+    "arguments": {
+      "path": "release notes.md"
+    }
+  },
+  {
+    "id": "benign-20",
+    "label": "write inside the root (irreversible, approved)",
+    "tool_scope": [
+      "fs.write"
+    ],
+    "egress_allowlist": [],
+    "tool_name": "fs.write",
+    "arguments": {
+      "path": "summary.md",
+      "content": "Resolved."
+    }
+  },
+  {
+    "id": "benign-21",
+    "label": "comment on a ticket (irreversible, approved)",
+    "tool_scope": [
+      "tickets.comment"
+    ],
+    "egress_allowlist": [],
+    "tool_name": "tickets.comment",
+    "arguments": {
+      "ticket_id": 4821,
+      "body": "We have reset your password."
+    }
+  },
+  {
+    "id": "benign-22",
+    "label": "post to an allowlisted host (irreversible, approved)",
+    "tool_scope": [
+      "http.post"
+    ],
+    "egress_allowlist": [
+      "docs.internal"
+    ],
+    "tool_name": "http.post",
+    "arguments": {
+      "url": "https://docs.internal/report",
+      "body": "resolved"
+    }
+  },
+  {
+    "id": "benign-23",
+    "label": "long but in-range comment body",
+    "tool_scope": [
+      "tickets.comment"
+    ],
+    "egress_allowlist": [],
+    "tool_name": "tickets.comment",
+    "arguments": {
+      "ticket_id": 4821,
+      "body": "Thanks for your patience. Thanks for your patience. Thanks for your patience. Thanks for your patience. Thanks for your patience. Thanks for your patience. Thanks for your patience. Thanks for your patience. Thanks for your patience. Thanks for your patience. Thanks for your patience. Thanks for your patience. Thanks for your patience. Thanks for your patience. Thanks for your patience. Thanks for your patience. Thanks for your patience. Thanks for your patience. Thanks for your patience. Thanks for your patience. Thanks for your patience. Thanks for your patience. Thanks for your patience. Thanks for your patience. Thanks for your patience. Thanks for your patience. Thanks for your patience. Thanks for your patience. Thanks for your patience. Thanks for your patience. Thanks for your patience. Thanks for your patience. Thanks for your patience. Thanks for your patience. Thanks for your patience. Thanks for your patience. Thanks for your patience. Thanks for your patience. Thanks for your patience. Thanks for your patience. "
+    }
+  },
+  {
+    "id": "benign-24",
+    "label": "content containing markup that is not active",
+    "tool_scope": [
+      "fs.write"
+    ],
+    "egress_allowlist": [],
+    "tool_name": "fs.write",
+    "arguments": {
+      "path": "notes.md",
+      "content": "<p>Ordinary paragraph</p>"
+    }
+  },
+  {
+    "id": "benign-25",
+    "label": "url whose path mentions another host",
+    "tool_scope": [
+      "http.get"
+    ],
+    "egress_allowlist": [
+      "docs.internal"
+    ],
+    "tool_name": "http.get",
+    "arguments": {
+      "url": "https://docs.internal/mirrors/evil.example.html"
+    }
+  }
+]

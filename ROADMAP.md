@@ -106,7 +106,7 @@ handler, and the refusal is attributable from the trace alone.
   immutable types. Constructing a `Task` after the loop starts is impossible by
   type, not by convention.
 - **Tests** U · A n/a · E n/a · G n/a — no interface.
-- [ ] Merged
+- [x] Merged
 
 ### N-06 — Tool registry and per-task scoping
 - **Owner** Broker engineer · **Depends on** N-05 · **Invariant** I1
@@ -114,14 +114,14 @@ handler, and the refusal is attributable from the trace alone.
   the dispatch table. A scope naming an unregistered tool fails construction
   closed. Zero-tool scope is legal. (FR-001…FR-005)
 - **Tests** U · A · E · G n/a — no interface.
-- [ ] Merged
+- [x] Merged
 
 ### N-07 — Argument schema validation
 - **Owner** Broker engineer · **Depends on** N-05 · **Invariant** I3
 - **Exit** Validation precedes budget accounting; all downstream checks and the
   audit record consume post-validation arguments. (FR-006…FR-008)
 - **Tests** U · A · E · G n/a.
-- [ ] Merged
+- [x] Merged
 
 ### N-08 — Decision pipeline and refusal reasons
 - **Owner** Broker engineer · **Depends on** N-06, N-07 · **Invariant** I1, I3
@@ -129,7 +129,7 @@ handler, and the refusal is attributable from the trace alone.
   machine-readable reason. Identical task and call yield an identical decision.
   No model call on this path. (FR-023, FR-024, NFR-002)
 - **Tests** U · A · E · G n/a.
-- [ ] Merged
+- [x] Merged
 
 ### N-09 — Append-only audit trace
 - **Owner** Broker engineer · **Depends on** N-08 · **Invariant** I3
@@ -138,7 +138,7 @@ handler, and the refusal is attributable from the trace alone.
   store exposes no mutation or deletion path. (FR-021, FR-022)
 - **Tests** U · A n/a — attribution is not itself an attack surface here · E ·
   G deferred to N-22.
-- [ ] Merged
+- [x] Merged
 
 ---
 
@@ -153,14 +153,14 @@ host, or exceed its caps without failing closed.
   check; refusal occurs before any file handle opens. String pattern-matching
   is not the mechanism. (FR-009, FR-011)
 - **Tests** U · A · E · G n/a.
-- [ ] Merged
+- [x] Merged
 
 ### N-11 — Egress allowlist
 - **Owner** Security engineer · **Depends on** N-08 · **Invariant** I4
 - **Exit** Host checked against the post-validation destination; refusal
   precedes socket creation. (FR-010, FR-011)
 - **Tests** U · A · E · G n/a.
-- [ ] Merged
+- [x] Merged
 
 ### N-12 — Budget accounting and fail-closed
 - **Owner** Broker engineer · **Depends on** N-08 · **Invariant** I3
@@ -168,7 +168,7 @@ host, or exceed its caps without failing closed.
   terminates in an explicitly failed state and reports it. No degraded mode, no
   silent stop. (FR-012, FR-013)
 - **Tests** U · A · E · G — cap state must be visible in the viewer.
-- [ ] Merged
+- [x] Merged
 
 ### N-13 — Irreversibility classification and approval gate
 - **Owner** Security engineer · **Depends on** N-09, N-12 · **Invariant** I3
@@ -176,7 +176,7 @@ host, or exceed its caps without failing closed.
   against a record bound to task id, tool, and argument digest, with expiry.
   No approval signal from context has any effect. (FR-014…FR-017)
 - **Tests** U · A · E · G — the approval state must be visible in the viewer.
-- [ ] Merged
+- [x] Merged
 
 ---
 
@@ -190,7 +190,7 @@ Exit criterion: no code path returns a raw tool result to the agent loop.
   evasion-only forms, removal of script blocks, HTML event handlers, macro
   payloads, and PDF actions. What was removed is recorded. (FR-018)
 - **Tests** U · A · E · G n/a.
-- [ ] Merged
+- [x] Merged
 
 ### N-15 — Delimiting and provenance tagging
 - **Owner** Ingest engineer · **Depends on** N-14 · **Invariant** I2
@@ -198,7 +198,7 @@ Exit criterion: no code path returns a raw tool result to the agent loop.
   that is itself a well-formed tool call is ingested as data, never dispatched.
   (FR-019, FR-020)
 - **Tests** U · A · E · G n/a.
-- [ ] Merged
+- [x] Merged
 
 ---
 
@@ -212,7 +212,7 @@ nothing.
 - **Exit** The adversarial step fails the build on zero collected tests or on
   any skip. The guard has its own test. (FR-013, TR-001)
 - **Tests** U · A n/a · E n/a · G n/a.
-- [ ] Merged
+- [x] Merged
 
 ### N-17 — Injection corpus: 30+ payloads, 7+ carriers
 - **Owner** Security engineer · **Depends on** N-10, N-11, N-13, N-15, N-16
@@ -221,7 +221,7 @@ nothing.
   filename, git commit message, dependency README. Every attack-table row
   A1–A9 has at least one payload asserting refusal. (TR-002, TR-003)
 - **Tests** A (this node *is* the adversarial tier) · E · G n/a.
-- [ ] Merged
+- [x] Merged
 
 ---
 
@@ -234,21 +234,21 @@ Exit criterion: someone else can install this and wire it to their agent.
 - **Exit** The broker is reachable as a reference MCP server with every
   invariant intact across the transport.
 - **Tests** U · A · E · G n/a.
-- [ ] Merged
+- [x] Merged
 
 ### N-19 — Worked example: filesystem + HTTP + ticketing
 - **Owner** Broker engineer · **Depends on** N-18 · **Invariant** none
 - **Exit** A runnable example wiring an agent to all three tools against
   throwaway fixtures. (FR-026)
 - **Tests** U n/a · A n/a · E · G n/a.
-- [ ] Merged
+- [x] Merged
 
 ### N-20 — Installable package and drop-in configuration
 - **Owner** Technical lead · **Depends on** N-18 · **Invariant** none
 - **Exit** Installable package plus drop-in config for at least one common
   agent runtime, installed from a clean machine in the E2E job. (FR-025)
 - **Tests** E · others n/a.
-- [ ] Merged
+- [x] Merged
 
 ---
 
@@ -263,7 +263,7 @@ cannot alter what they are reading.
   post-validation arguments. Refusals visibly refused. No write path exists in
   the interface or behind it. (AC-006)
 - **Tests** U · A n/a · E · G.
-- [ ] Merged
+- [x] Merged
 
 ### N-22 — Playwright GUI suite
 - **Owner** Test engineer · **Depends on** N-21 · **Invariant** I3
@@ -272,7 +272,7 @@ cannot alter what they are reading.
   exhaustion and pending approval are visible as distinct states, and that no
   interaction mutates a trace. Blocking in CI.
 - **Tests** G (this node *is* the GUI tier) · E.
-- [ ] Merged
+- [x] Merged
 
 ---
 
@@ -287,14 +287,14 @@ under, and the limitations are specific.
   milliseconds and cap behaviour with measurement conditions attached.
   (NFR-001, NFR-003)
 - **Tests** U · E · others n/a.
-- [ ] Merged
+- [x] Merged
 
 ### N-24 — Benign-task corpus and false-refusal rate
 - **Owner** Benchmark engineer · **Depends on** N-23 · **Invariant** none
 - **Exit** The control's cost measured and reported, with the corpus stated as
   synthetic. (AC-003)
 - **Tests** U · E · others n/a.
-- [ ] Merged
+- [x] Merged
 
 ### N-25 — README with measured results and limitations
 - **Owner** Documentation owner · **Depends on** N-17, N-22, N-24
@@ -304,7 +304,7 @@ under, and the limitations are specific.
   section that is specific and current. Every claim traces to a file, and where
   automated coverage exists, to a test. (AC-002…AC-005, AC-007)
 - **Tests** n/a — documentation node. Claim traceability is checked at review.
-- [ ] Merged
+- [x] Merged
 
 ### N-26 — Release v0.1.0
 - **Owner** Technical lead · **Depends on** N-20, N-25 · **Invariant** none
@@ -323,5 +323,5 @@ Recorded so that absence is a decision rather than an oversight.
 |---|---|
 | Concurrent tasks sharing a budget pool | Adds cross-task state to the decision path; v0.1.0 keeps the broker per-task and stateless across tasks. Listed as a limitation |
 | Detecting unsafe composition of two in-scope tools | Unsolved. Bounded by attribution and approval, not prevented (threat model §7.2) |
-| A model-based classifier as a noise reducer | Permitted *alongside* the broker, never on the authorisation path (ADR-0001). No value until false-refusal rate is measured |
+| A model-based classifier as a noise reducer | Permitted *alongside* the broker, never on the authorisation path (ADR-0001). The false-refusal rate is now measured at 0/25 on a synthetic corpus, so there is no measured noise to reduce — revisit when a rate from real traffic exists |
 | Third-party security review | Wanted. Scheduled after v0.1.0; its absence is stated in the README |

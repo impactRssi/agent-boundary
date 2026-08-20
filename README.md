@@ -7,12 +7,11 @@ agent and the tools it can reach. It decides which proposed calls become
 effects — without consulting a model, and without reading a single token of the
 agent's context.
 
-> **Status: pre-release (`v0.1.0.dev0`).** The threat model, specification, work
-> graph, and blocking CI gate are in place. The broker itself is being built
-> across nodes N-05 to N-13. **No benchmark numbers are published yet, because
-> none have been measured.** See [Measured results](#measured-results) and
-> [Limitations](#limitations) — both say so explicitly rather than implying
-> otherwise.
+> **Status: `v0.1.0`.** The broker, the ingest path, the MCP server, the
+> indirect-injection corpus, the audit-trace viewer, and the benchmark harness
+> are implemented and blocking in CI. The numbers in
+> [Measured results](#6-measured-results) come from a run you can reproduce
+> with one command; read the caveat attached to each one.
 
 ---
 
@@ -95,14 +94,15 @@ a named enforcement point in the code and a blocking test tier.
 
 | # | Invariant | Enforcement point | Verified by |
 |---|---|---|---|
-| **I1** | The model cannot reach a tool outside the current task's allowlist. Scoped **at construction time**, not filtered at call time — an out-of-scope tool has no handle the model can name | `agentboundary/broker/registry.py` *(N-06)* | Unit + adversarial |
-| **I2** | Tool output is untrusted input: normalised, stripped of active content, delimited, and provenance-tagged before re-entering context. Never treated as instruction | `agentboundary/ingest/` *(N-14, N-15)* | Unit + adversarial |
-| **I3** | Every side-effecting call is bounded and attributable. Hard caps on count, cost, and wall clock; irreversible effects require out-of-band human approval | `agentboundary/broker/budget.py`, `approval.py` *(N-12, N-13)* | Unit + adversarial + E2E + GUI |
-| **I4** | Filesystem and network access are confined by construction. Paths resolved to an explicit root **before** the check; egress via allowlist | `agentboundary/broker/confinement.py` *(N-10, N-11)* | Unit + adversarial |
+| **I1** | The model cannot reach a tool outside the current task's allowlist. Scoped **at construction time**, not filtered at call time — an out-of-scope tool has no handle the model can name | [`registry.py`](src/agentboundary/registry.py) | Unit + adversarial |
+| **I2** | Tool output is untrusted input: normalised, stripped of active content, delimited, and provenance-tagged before re-entering context. Never treated as instruction | [`ingest/`](src/agentboundary/ingest/) | Unit + adversarial |
+| **I3** | Every side-effecting call is bounded and attributable. Hard caps on count, cost, and wall clock; irreversible effects require out-of-band human approval | [`budget.py`](src/agentboundary/budget.py), [`approval.py`](src/agentboundary/approval.py) | Unit + adversarial + E2E + GUI |
+| **I4** | Filesystem and network access are confined by construction. Paths resolved to an explicit root **before** the check; egress via allowlist | [`confinement.py`](src/agentboundary/confinement.py) | Unit + adversarial |
 
-Node references in *(italics)* point at [`ROADMAP.md`](ROADMAP.md). Files marked
-with a node that has not merged do not exist yet — stated here rather than
-implied, so this table can be checked against the tree at any commit.
+Every file above exists and every cell in "Verified by" corresponds to tests
+that run in CI. The authorisation path is [`broker.py`](src/agentboundary/broker.py):
+it resolves the tool in the task's scope, validates arguments, then runs the
+guards in order.
 
 ### Why deterministic brokering
 
@@ -139,32 +139,83 @@ something or nothing. The guard is shipped as
 [`agentboundary.testing.adversarial_guard`](src/agentboundary/testing/adversarial_guard.py)
 and is [itself unit-tested](tests/unit/test_adversarial_guard.py).
 
-**Current state:** the guard is implemented and blocking. The corpus is node
-N-17 and contains one placeholder payload. Target: 30+ payloads across 7+
-carrier types.
+The corpus holds **36 payloads across 9 carrier types**, and every attack-table
+row A1–A9 has at least one payload. Both floors are asserted by test.
+
+A corpus that only ever refuses proves nothing — a broker that refused
+*everything* would score identically. So
+[`test_corpus_is_falsifiable.py`](tests/adversarial/test_corpus_is_falsifiable.py)
+is the control on the control: legitimate work must be **authorised** under the
+same pipeline, and each refusal must flip to an authorisation when the task
+legitimately permits it.
 
 ---
 
 ## 6. Measured results
 
-**Nothing has been measured yet.** This section is a contract about what will
-be published, not a report.
+Reproduce with:
 
-When the harness lands (N-23, N-24), each of the following is published with
-the conditions it was measured under, in the same sentence — the caveat is what
-makes the number credible:
+```bash
+uv run python benchmarks/harness.py
+```
 
-| Metric | Status |
-|---|---|
-| Injection corpus: attempted / blocked, broken down by carrier type | Not yet measured |
-| False-refusal rate on a benign task corpus — the control's cost, stated honestly | Not yet measured |
-| Broker overhead per tool call, in milliseconds | Not yet measured |
-| Budget-exhaustion behaviour at the cap, and that it fails closed | Not yet measured |
+Offline, single process, no network. Full output:
+[`benchmarks/results.json`](benchmarks/results.json).
 
-A bare percentage will not appear here. Neither will a number whose corpus is
-not described.
+**Conditions for every figure below:** Python 3.13.13 on Darwin/arm64, offline, synthetic corpora, single process, no warm cache.
 
----
+### Injection corpus: 36/36 blocked
+
+On a hand-written synthetic corpus of 36 payloads across
+9 carrier types, matching the current invariant set.
+Each payload asserts a **specific** refusal reason, not merely that a refusal
+happened — 0 were blocked by a
+different control than the one under test.
+
+| Carrier | Attempted | Blocked |
+|---|---|---|
+| `dependency_readme` | 3 | 3 |
+| `error_message` | 3 | 3 |
+| `filename` | 4 | 4 |
+| `git_commit_message` | 3 | 3 |
+| `html_page` | 6 | 6 |
+| `json_api_response` | 4 | 4 |
+| `pdf_document` | 3 | 3 |
+| `shared_drive_document` | 4 | 4 |
+| `ticket_description` | 6 | 6 |
+
+Attack-table rows covered: A1, A2, A3, A4, A5, A6, A7, A8, A9.
+
+### False-refusal rate: 0/25 (0.0%)
+
+**Read the caveat before the number.** I wrote the benign corpus, and I wrote it
+knowing what the controls check. The honest reading of 0/25 is
+"no benign task I thought of was refused" — not "the control has no cost".
+
+The corpus deliberately includes cases near a boundary: a path that dips through
+`..` and returns inside the root, an allowlisted host on a non-default port, a
+filename containing a `..` substring that is not a traversal, uppercase hosts,
+unicode filenames. A rate measured only on obviously-safe calls measures
+nothing. It remains a corpus of my own construction, and this is the figure most
+likely to move once someone points the broker at real work.
+
+### Broker overhead: 0.1162 ms mean per call
+
+Over 2000 iterations after a 200-call warm-up:
+mean **0.1162 ms**, median 0.1104 ms, p95 0.1298 ms,
+p99 0.1515 ms.
+
+Measures authorisation only — scope resolution, schema validation, path
+confinement, egress check, budget accounting, approval lookup. **Excludes** the
+ingest path and the handler's own work, both of which usually dominate a real
+call.
+
+### Budget exhaustion fails closed
+
+With `max_calls=3` and 10 attempts: 3 authorised, then 7 refusals, all
+`budget_exhausted`. Same shape for the cost cap. Once refused, every subsequent
+call is refused — a cap that let a later call through would be a rate limiter,
+not a bound.
 
 ## 7. Limitations
 
@@ -187,9 +238,10 @@ Read this section. It is the one that tells you whether this is useful to you.
 5. **No defence against a malicious operator**, by design. Whoever configures
    the task, the allowlist, and the approval policy is trusted.
 6. **No claim about model alignment.** The design assumes the model is hostile.
-7. **The benign-task corpus will be synthetic**, and the false-refusal rate
-   will be reported as such. That is a weaker claim than one measured against
-   production traffic.
+7. **The benign-task corpus is synthetic and I wrote it**, knowing what the
+   controls check. The 0% false-refusal rate should be read as "no benign task
+   I thought of was refused", which is materially weaker than a rate measured
+   against traffic someone else generated.
 8. **Concurrent tasks sharing a budget pool are not supported** in v0.1.0.
 9. **No third-party security review** at time of writing.
 
@@ -219,9 +271,36 @@ make check
 with coverage, the adversarial suite under its guard, SAST, dependency audit,
 and secret scan. All blocking.
 
-There is no usable API yet. Node N-18 ships the reference MCP server; N-19 the
-worked example wiring an agent to a filesystem tool, an HTTP tool, and a
-ticketing tool; N-20 the installable package and drop-in runtime config.
+### See it work
+
+```bash
+uv run python examples/support_triage.py
+```
+
+An agent triaging a poisoned support ticket. The attacker has no session and no
+key — they filed a ticket. Everything they wrote is read by the agent; nothing
+they wrote reaches an effect.
+
+### Wire it to your agent
+
+```bash
+pip install "agent-boundary[mcp]"
+python -m agentboundary --task task.json --dry-run
+```
+
+The task file is the security configuration — scope, filesystem root, egress
+allowlist, caps. See [`examples/dropin/`](examples/dropin/) for a worked
+configuration and the two placement rules that matter.
+
+### Read a trace
+
+```python
+from agentboundary.viewer import serve
+
+serve(audit.records())
+```
+
+Read-only, in a browser. Refusals read as refused, with their reason.
 
 ---
 
@@ -236,6 +315,9 @@ ticketing tool; N-20 the installable package and drop-in runtime config.
 | [`ROADMAP.md`](ROADMAP.md) | The work graph: 26 nodes with dependencies and exit conditions |
 | [`SECURITY.md`](SECURITY.md) | Disclosure policy, and what is explicitly *not* a vulnerability here |
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | What will get a pull request rejected, and why |
+| [`corpus/`](corpus/) | The 36 injection payloads, in the clear |
+| [`benchmarks/`](benchmarks/) | The harness, and the caveat on the false-refusal rate |
+| [`examples/dropin/`](examples/dropin/) | A worked task file and the placement rules that matter |
 
 ---
 

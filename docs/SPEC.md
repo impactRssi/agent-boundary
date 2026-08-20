@@ -239,6 +239,8 @@ specification that lists only what works is incomplete:
 4. An allowlisted egress host that accepts attacker-readable content is an
    exfiltration channel.
 5. No defence against a malicious operator, by design.
-6. The benign-task corpus is synthetic.
+6. The benign-task corpus is synthetic and written by the same author as the
+   controls. The measured 0/25 false-refusal rate means "no benign task the
+   author thought of was refused", not "the control has no cost".
 7. Concurrent tasks sharing a budget pool are not supported in v0.1.0.
 8. No third-party review at time of writing.
