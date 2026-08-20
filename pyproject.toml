@@ -46,6 +46,9 @@ dev = [
   "bandit>=1.7",
   "pip-audit>=2.7",
 ]
+gui = [
+    "pytest-playwright>=0.5",
+]
 
 # ---------------------------------------------------------------------------
 # Packaging
@@ -55,7 +58,7 @@ packages = ["src/agentboundary"]
 # PEP 561. Without this marker a downstream type checker silently treats the
 # whole package as untyped, which for a security library means callers lose the
 # guarantees the annotations were written to provide.
-artifacts = ["src/agentboundary/py.typed"]
+artifacts = ["src/agentboundary/py.typed", "src/agentboundary/viewer/static/*"]
 
 # ---------------------------------------------------------------------------
 # Tests

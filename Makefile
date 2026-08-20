@@ -43,7 +43,7 @@ test-e2e: ## End-to-end tier over a real transport
 	$(RUN) pytest tests/e2e
 
 test-gui: ## GUI tier, Playwright against the audit-trace viewer
-	$(RUN) pytest tests/gui -m gui
+	$(RUN) --group gui pytest tests/gui
 
 # Coverage is measured over the WHOLE suite, not the unit tier alone. The
 # transport, the entry point, and the handlers are exercised end to end by
@@ -70,9 +70,9 @@ secrets: ## Secret scan over the full history
 		     echo "  brew install gitleaks"; exit 1; }
 	gitleaks detect --no-banner --redact
 
-check: format-check lint types test-unit test-adversarial test-e2e coverage sast audit secrets ## The full gate, in CI order
+check: format-check lint types test-unit test-adversarial test-e2e test-gui coverage sast audit secrets ## The full gate, in CI order
 	@echo
-	@echo "gate passed: format, lint, types, unit, adversarial, e2e, coverage, sast, audit, secrets"
+	@echo "gate passed: format, lint, types, unit, adversarial, e2e, gui, coverage, sast, audit, secrets"
 
 clean: ## Remove build and cache artifacts
 	rm -f .requirements.audit.txt
