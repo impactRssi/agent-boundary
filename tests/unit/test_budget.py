@@ -133,3 +133,81 @@ class TestAccounting:
         ledger = BudgetLedger(_caps(calls=3), clock=FakeClock())
         detail = BudgetGuard(ledger).check(_context(_caps(calls=3))).detail
         assert "0/3 calls" in detail
+
+
+class TestCommitIsPartOfThePipeline:
+    """Regression: nothing debited the ledger in the assembled system.
+
+    The unit tests debited by hand, so the cap appeared to work. End to end no
+    transport ever called debit, the ledger stayed empty, and the cap never
+    bound. Making commit a pipeline step is what closes that, so it is asserted
+    here rather than only through the E2E tier.
+    """
+
+    def test_the_guard_exposes_a_commit_hook(self) -> None:
+        from agentboundary.guards import CommittingGuard
+
+        guard = BudgetGuard(BudgetLedger(_caps(), clock=FakeClock()))
+        assert isinstance(guard, CommittingGuard)
+
+    def test_committing_debits_the_ledger(self) -> None:
+        ledger = BudgetLedger(_caps(calls=5), clock=FakeClock())
+        guard = BudgetGuard(ledger)
+        guard.commit(_context(_caps(calls=5), weight=2.0))
+        assert ledger.state().calls == 1
+        assert ledger.state().cost == 2.0
+
+    def test_the_broker_debits_only_on_a_full_authorisation(self) -> None:
+        """A call refused by a later guard must cost nothing (FR-007)."""
+        from agentboundary.broker import Broker
+        from agentboundary.errors import RefusalReason
+        from agentboundary.guards import GuardResult
+        from agentboundary.model import Task
+        from agentboundary.registry import ToolRegistry
+
+        caps = _caps(calls=5)
+        ledger = BudgetLedger(caps, clock=FakeClock())
+
+        class AlwaysRefuse:
+            name = "downstream"
+
+            def check(self, context: object) -> GuardResult:
+                del context
+                return GuardResult.refuse(RefusalReason.APPROVAL_REQUIRED, "no")
+
+        tool = Tool(name="http.get", arg_schema={}, cost_weight=1.0)
+        task = Task(
+            id="t",
+            tool_scope=frozenset({tool.name}),
+            fs_root=None,
+            egress_allowlist=frozenset(),
+            caps=caps,
+        )
+        registry = ToolRegistry([tool])
+        broker = Broker(task, registry.scope_for(task), [BudgetGuard(ledger), AlwaysRefuse()])
+
+        decision = broker.authorise(ProposedCall("http.get", {}))
+        assert not decision.authorised
+        assert ledger.state().calls == 0
+
+    def test_the_broker_debits_when_the_pipeline_authorises(self) -> None:
+        from agentboundary.broker import Broker
+        from agentboundary.model import Task
+        from agentboundary.registry import ToolRegistry
+
+        caps = _caps(calls=5)
+        ledger = BudgetLedger(caps, clock=FakeClock())
+        tool = Tool(name="http.get", arg_schema={}, cost_weight=1.5)
+        task = Task(
+            id="t",
+            tool_scope=frozenset({tool.name}),
+            fs_root=None,
+            egress_allowlist=frozenset(),
+            caps=caps,
+        )
+        registry = ToolRegistry([tool])
+        broker = Broker(task, registry.scope_for(task), [BudgetGuard(ledger)])
+
+        assert broker.authorise(ProposedCall("http.get", {})).authorised
+        assert ledger.state().calls == 1
+        assert ledger.state().cost == 1.5

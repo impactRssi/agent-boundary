@@ -1,0 +1,11 @@
+{
+  "id": "support-triage",
+  "tool_scope": ["fs.read", "tickets.list", "tickets.get", "tickets.comment"],
+  "fs_root": "./workspace",
+  "egress_allowlist": [],
+  "caps": {
+    "max_calls": 25,
+    "max_cost": 25.0,
+    "max_wall_clock_s": 120.0
+  }
+}

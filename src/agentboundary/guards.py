@@ -17,7 +17,7 @@ from typing import Any, Protocol, runtime_checkable
 from agentboundary.errors import RefusalReason
 from agentboundary.model import ProposedCall, Task, Tool
 
-__all__ = ["CallContext", "Guard", "GuardResult"]
+__all__ = ["CallContext", "CommittingGuard", "Guard", "GuardResult"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -71,4 +71,23 @@ class Guard(Protocol):
 
     def check(self, context: CallContext) -> GuardResult:
         """Decide. Must not perform I/O with side effects, and must not block."""
+        ...
+
+
+@runtime_checkable
+class CommittingGuard(Protocol):
+    """A guard that keeps state and must be told when a call was authorised.
+
+    Budget accounting is the motivating case. A ledger that is only *consulted*
+    never accumulates, so every call sees an empty budget and the cap never
+    binds. Making the commit step part of the pipeline -- rather than something
+    each caller performs after authorising -- is what stops that from depending
+    on every transport remembering to do it.
+
+    Commit runs only when the **whole** pipeline authorised, so a call refused
+    by a later guard costs nothing (FR-007).
+    """
+
+    def commit(self, context: CallContext) -> None:
+        """Record that this call was authorised. Must not raise for ordinary state."""
         ...
