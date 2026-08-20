@@ -10,7 +10,6 @@ from __future__ import annotations
 import threading
 from collections.abc import Iterator
 from http.server import ThreadingHTTPServer
-from pathlib import Path
 
 import pytest
 from playwright.sync_api import Page
