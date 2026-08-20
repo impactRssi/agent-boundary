@@ -313,6 +313,7 @@ Read-only, in a browser. Refusals read as refused, with their reason.
 | [`docs/WORKING_METHODS.md`](docs/WORKING_METHODS.md) | Graph-based decomposition, branch policy, the three test tiers |
 | [`docs/adr/`](docs/adr/) | The load-bearing decisions, each naming what was rejected and why |
 | [`ROADMAP.md`](ROADMAP.md) | The work graph: 26 nodes with dependencies and exit conditions |
+| [`CHANGELOG.md`](CHANGELOG.md) | What shipped, what was measured, what is still missing |
 | [`SECURITY.md`](SECURITY.md) | Disclosure policy, and what is explicitly *not* a vulnerability here |
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | What will get a pull request rejected, and why |
 | [`corpus/`](corpus/) | The 36 injection payloads, in the clear |
