@@ -116,12 +116,15 @@ def broker_for(
     target would prove that each control works in isolation, which is not the
     claim being made.
     """
-    catalogue = registry or reference_registry()
+    # `is None`, not `or`: ToolRegistry defines __len__, so a deliberately
+    # empty registry is falsy and would be replaced by the full reference
+    # catalogue -- widening the very scope a payload is testing.
+    catalogue = registry if registry is not None else reference_registry()
     task = payload.build_task(fs_root)
     guards: list[Guard] = [
         PathConfinementGuard(),
         EgressGuard(),
         BudgetGuard(BudgetLedger(task.caps)),
-        ApprovalGuard(approvals or ApprovalStore()),
+        ApprovalGuard(approvals if approvals is not None else ApprovalStore()),
     ]
     return Broker(task, catalogue.scope_for(task), guards)

@@ -23,11 +23,19 @@ classifiers = [
 ]
 dependencies = []
 
+[project.scripts]
+agent-boundary = "agentboundary.__main__:main"
+
 [project.urls]
 Homepage = "https://github.com/impactRssi/agent-boundary"
 Source = "https://github.com/impactRssi/agent-boundary"
 "Threat model" = "https://github.com/impactRssi/agent-boundary/blob/main/docs/THREAT_MODEL.md"
 "Security policy" = "https://github.com/impactRssi/agent-boundary/blob/main/SECURITY.md"
+
+[project.optional-dependencies]
+mcp = [
+    "mcp>=1.2",
+]
 
 [dependency-groups]
 dev = [
@@ -44,6 +52,10 @@ dev = [
 # ---------------------------------------------------------------------------
 [tool.hatch.build.targets.wheel]
 packages = ["src/agentboundary"]
+# PEP 561. Without this marker a downstream type checker silently treats the
+# whole package as untyped, which for a security library means callers lose the
+# guarantees the annotations were written to provide.
+artifacts = ["src/agentboundary/py.typed"]
 
 # ---------------------------------------------------------------------------
 # Tests
@@ -56,7 +68,7 @@ packages = ["src/agentboundary"]
 [tool.pytest.ini_options]
 minversion = "8.0"
 testpaths = ["tests"]
-pythonpath = ["src"]
+pythonpath = ["src", "."]
 addopts = "-ra --strict-markers --strict-config"
 markers = [
   "security: adversarial payload asserting the broker refused a call",
@@ -122,6 +134,11 @@ warn_unreachable = true
 warn_return_any = true
 disallow_any_explicit = false
 files = ["src", "tests"]
+# Each test tier has its own conftest. Without explicit package bases they all
+# resolve to the module name "conftest" and mypy refuses to check any of them.
+explicit_package_bases = true
+namespace_packages = true
+mypy_path = "src:."
 
 # Tests are held to the same strictness as the package. A test that is not
 # type-checked is a test whose assertions can drift from the interface it

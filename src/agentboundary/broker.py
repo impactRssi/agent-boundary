@@ -23,7 +23,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 from agentboundary.errors import RefusalReason
-from agentboundary.guards import CallContext, Guard, GuardResult
+from agentboundary.guards import CallContext, CommittingGuard, Guard, GuardResult
 from agentboundary.model import Check, Decision, ProposedCall, Task
 from agentboundary.registry import ScopedTools
 from agentboundary.schema import SchemaError, ValidationError, validate
@@ -117,6 +117,15 @@ class Broker:
                 # `reason` is non-None by GuardResult's own invariant.
                 assert result.reason is not None  # noqa: S101
                 return Decision.refuse(result.reason, checks, validated)
+
+        # Every guard that keeps state is told, and only now: a call refused
+        # by a later guard must cost nothing (FR-007). Doing this here rather
+        # than in each transport is what stops a caller from silently omitting
+        # it -- which would leave budget consulted but never accumulated, so
+        # the cap would never bind.
+        for guard in self._guards:
+            if isinstance(guard, CommittingGuard):
+                guard.commit(context)
 
         return Decision.authorise(checks, validated, cost=tool.cost_weight)
 

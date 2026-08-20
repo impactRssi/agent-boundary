@@ -123,3 +123,7 @@ desktop.ini
 
 # Transient audit export, written and removed by `make audit`
 .requirements.audit.txt
+
+# Example drop-in runtime artefacts
+examples/dropin/workspace/
+.audit/

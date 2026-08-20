@@ -163,3 +163,12 @@ class BudgetGuard:
             f"within caps: {state.calls}/{self._ledger.caps.max_calls} calls, "
             f"{state.cost:.4f}/{self._ledger.caps.max_cost} cost"
         )
+
+    def commit(self, context: CallContext) -> None:
+        """Debit the ledger for a call the whole pipeline authorised.
+
+        Called by the broker, never by a transport. A ledger that is consulted
+        but never debited reports an empty budget on every call, so the cap
+        never binds -- and nothing about the code reads as broken.
+        """
+        self._ledger.debit(context.tool.cost_weight)

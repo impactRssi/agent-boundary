@@ -58,9 +58,14 @@ jobs:
           version: ${{ env.UV_VERSION }}
           enable-cache: true
       - run: uv python install ${{ matrix.python-version }}
-      - run: uv sync --group dev --frozen
+      - run: uv sync --group dev --extra mcp --frozen
       - name: Unit tier
-        run: uv run pytest tests/unit --cov=agentboundary --cov-report=term-missing
+        run: uv run pytest tests/unit
+      # Coverage over the whole suite. The transport and entry point are
+      # exercised end to end by design; a unit-only figure would report them
+      # as dead code and reward mocking the boundary under test.
+      - name: Coverage floor
+        run: uv run pytest tests --adversarial-guard --cov=agentboundary --cov-report=term-missing
 
   adversarial:
     name: adversarial corpus (blocking)
@@ -94,6 +99,24 @@ jobs:
             exit 1
           fi
           echo "Guard fails closed on an empty corpus (exit ${status})."
+
+  e2e:
+    name: end-to-end
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v7
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+      - run: uv python install ${{ env.PYTHON_VERSION }}
+      # --extra mcp: the E2E tier drives the assembled system, and the MCP
+      # server is how the system is meant to be assembled.
+      - run: uv sync --group dev --extra mcp --frozen
+      - name: End-to-end tier
+        run: uv run pytest tests/e2e -v
+      - name: Worked example runs offline
+        run: uv run python examples/support_triage.py
 
   security:
     name: sast, dependency audit, secrets
@@ -136,7 +159,7 @@ jobs:
   gate:
     name: gate
     runs-on: ubuntu-latest
-    needs: [static, unit, adversarial, security]
+    needs: [static, unit, adversarial, e2e, security]
     if: always()
     steps:
       # A required check that passes when a needed job was skipped or cancelled

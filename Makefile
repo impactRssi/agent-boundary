@@ -5,7 +5,7 @@
 
 .DEFAULT_GOAL := help
 .PHONY: help install format format-check lint types test-unit test-adversarial \
-        test-e2e test-gui sast audit secrets check clean
+        test-e2e test-gui coverage sast audit secrets check clean
 
 UV ?= uv
 RUN := $(UV) run
@@ -29,8 +29,8 @@ lint: ## Static lint, including flake8-bandit rules
 types: ## Strict type check across src and tests
 	$(RUN) mypy
 
-test-unit: ## Unit tier, with the coverage floor enforced
-	$(RUN) pytest tests/unit --cov=agentboundary --cov-report=term-missing
+test-unit: ## Unit tier
+	$(RUN) pytest tests/unit
 
 # The adversarial tier is a SEPARATE target, not a subset of the unit run.
 # --adversarial-guard fails the run if the suite collected nothing or skipped a
@@ -40,10 +40,17 @@ test-adversarial: ## Adversarial tier, under the zero-collect / no-skip guard
 	$(RUN) pytest tests/adversarial --adversarial-guard
 
 test-e2e: ## End-to-end tier over a real transport
-	$(RUN) pytest tests/e2e -m e2e
+	$(RUN) pytest tests/e2e
 
 test-gui: ## GUI tier, Playwright against the audit-trace viewer
 	$(RUN) pytest tests/gui -m gui
+
+# Coverage is measured over the WHOLE suite, not the unit tier alone. The
+# transport, the entry point, and the handlers are exercised end to end by
+# design -- measuring only unit coverage would report them as dead code and
+# push someone to write unit tests that mock the boundary under test.
+coverage: ## Full suite with the coverage floor enforced
+	$(RUN) pytest tests --adversarial-guard --cov=agentboundary --cov-report=term-missing
 
 sast: ## SAST over the package. Must return zero high-severity findings
 	$(RUN) bandit -c pyproject.toml -r src -ll
@@ -63,9 +70,9 @@ secrets: ## Secret scan over the full history
 		     echo "  brew install gitleaks"; exit 1; }
 	gitleaks detect --no-banner --redact
 
-check: format-check lint types test-unit test-adversarial sast audit secrets ## The full gate, in CI order
+check: format-check lint types test-unit test-adversarial test-e2e coverage sast audit secrets ## The full gate, in CI order
 	@echo
-	@echo "gate passed: format, lint, types, unit+coverage, adversarial, sast, audit, secrets"
+	@echo "gate passed: format, lint, types, unit, adversarial, e2e, coverage, sast, audit, secrets"
 
 clean: ## Remove build and cache artifacts
 	rm -f .requirements.audit.txt
