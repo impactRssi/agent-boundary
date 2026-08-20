@@ -1,0 +1,122 @@
+# ---------------------------------------------------------------------------
+# Assistant / agent working files -- local only, never committed.
+# These are scratch context for the maintainer's tooling, not project sources.
+# ---------------------------------------------------------------------------
+CLAUDE.md
+CLAUDE.local.md
+AGENTS.md
+AGENT.md
+agent.md
+agents.md
+INIT.md
+init.md
+GEMINI.md
+.cursorrules
+.cursor/
+.aider*
+.windsurfrules
+.github/copilot-instructions.md
+.claude/
+.codex/
+.opencode/
+.specify/
+specs/
+.specstory/
+memory/
+*.claude.md
+*.agent.md
+
+# ---------------------------------------------------------------------------
+# Python
+# ---------------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+wheels/
+*.egg-info/
+.eggs/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Environments
+.venv/
+venv/
+env/
+ENV/
+.python-version
+
+# Test / coverage
+.pytest_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+.tox/
+.nox/
+.hypothesis/
+junit*.xml
+
+# Type checkers / linters
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.pyre/
+.pytype/
+.ruff_cache/
+
+# ---------------------------------------------------------------------------
+# Node (GUI / E2E harness only)
+# ---------------------------------------------------------------------------
+node_modules/
+npm-debug.log*
+yarn-error.log*
+.pnpm-store/
+playwright-report/
+test-results/
+blob-report/
+.playwright/
+
+# ---------------------------------------------------------------------------
+# Secrets and local configuration
+# .env.example IS committed; every real .env is not.
+# ---------------------------------------------------------------------------
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+!tests/**/fixtures/*.key
+credentials.json
+secrets.yaml
+
+# ---------------------------------------------------------------------------
+# Build / release artifacts
+# ---------------------------------------------------------------------------
+sbom.json
+sbom.cdx.json
+*.sig
+*.sbom
+attestation*.json
+.audit/
+runs/
+
+# ---------------------------------------------------------------------------
+# OS / editor
+# ---------------------------------------------------------------------------
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+desktop.ini
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
