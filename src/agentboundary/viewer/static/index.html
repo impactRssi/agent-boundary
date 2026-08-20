@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Agent Boundary — audit trace</title>
+<style>
+  :root {
+    --bg: #ffffff; --fg: #16181d; --muted: #5c6370; --line: #d8dce3;
+    --refuse: #a3272b; --refuse-bg: #fcf0f0; --authorise: #1f6b3a; --authorise-bg: #eef7f1;
+    --code-bg: #f5f6f8;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14161a; --fg: #e6e8ec; --muted: #9aa2af; --line: #2c313a;
+      --refuse: #ff8b8f; --refuse-bg: #2a1719; --authorise: #7fd6a0; --authorise-bg: #14231a;
+      --code-bg: #1c1f25;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 2rem 1.5rem; background: var(--bg); color: var(--fg);
+    font: 15px/1.55 ui-sans-serif, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  main { max-width: 60rem; margin: 0 auto; }
+  h1 { font-size: 1.3rem; margin: 0 0 .25rem; }
+  .lede { color: var(--muted); margin: 0 0 1.5rem; font-size: .9rem; }
+  .summary { display: flex; flex-wrap: wrap; gap: 1.5rem; padding: 1rem 1.25rem;
+             border: 1px solid var(--line); border-radius: 8px; margin-bottom: 1.5rem; }
+  .stat b { display: block; font-size: 1.6rem; font-variant-numeric: tabular-nums; }
+  .stat span { color: var(--muted); font-size: .8rem; text-transform: uppercase;
+               letter-spacing: .05em; }
+  .record { border: 1px solid var(--line); border-left-width: 4px; border-radius: 6px;
+            padding: .85rem 1rem; margin-bottom: .75rem; }
+  .record[data-outcome="refuse"] { border-left-color: var(--refuse); background: var(--refuse-bg); }
+  .record[data-outcome="authorise"] { border-left-color: var(--authorise);
+                                      background: var(--authorise-bg); }
+  .head { display: flex; flex-wrap: wrap; align-items: baseline; gap: .6rem; }
+  .verdict { font-weight: 700; letter-spacing: .03em; }
+  .record[data-outcome="refuse"] .verdict { color: var(--refuse); }
+  .record[data-outcome="authorise"] .verdict { color: var(--authorise); }
+  .tool { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .reason { font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+            font-size: .82rem; padding: .1rem .4rem; border-radius: 4px;
+            background: var(--code-bg); }
+  .seq { color: var(--muted); font-variant-numeric: tabular-nums; font-size: .82rem; }
+  .status { color: var(--muted); font-size: .82rem; margin-left: auto; }
+  pre { background: var(--code-bg); padding: .6rem .75rem; border-radius: 5px;
+        overflow-x: auto; font-size: .82rem; margin: .6rem 0 0; }
+  ol.checks { margin: .6rem 0 0; padding-left: 1.2rem; font-size: .85rem; }
+  ol.checks li { margin: .15rem 0; }
+  ol.checks .failed { color: var(--refuse); font-weight: 600; }
+  .empty { color: var(--muted); padding: 2rem; text-align: center;
+           border: 1px dashed var(--line); border-radius: 8px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Audit trace</h1>
+  <p class="lede">
+    Read-only. This viewer has no write path: every proposed call is shown as the
+    broker decided it, refusals included.
+  </p>
+
+  <section class="summary" id="summary" aria-label="Summary"></section>
+  <section id="records" aria-label="Records"></section>
+</main>
+
+<script>
+"use strict";
+
+// Everything below builds DOM with textContent. No innerHTML anywhere: a trace
+// is full of attacker-authored strings, and rendering one as markup would turn
+// the viewer into the exfiltration path the broker just refused.
+function el(tag, className, text) {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  if (text !== undefined) node.textContent = String(text);
+  return node;
+}
+
+function stat(value, label) {
+  const wrap = el("div", "stat");
+  wrap.appendChild(el("b", null, value));
+  wrap.appendChild(el("span", null, label));
+  return wrap;
+}
+
+function renderSummary(summary) {
+  const host = document.getElementById("summary");
+  host.replaceChildren();
+  host.appendChild(stat(summary.total, "calls"));
+  host.appendChild(stat(summary.authorised, "authorised"));
+  host.appendChild(stat(summary.refused, "refused"));
+  for (const [reason, count] of Object.entries(summary.reasons || {})) {
+    host.appendChild(stat(count, reason));
+  }
+}
+
+function renderRecord(record) {
+  const refused = record.outcome === "refuse";
+  const node = el("article", "record");
+  node.dataset.outcome = record.outcome;
+  node.dataset.tool = record.tool_name;
+  if (record.reason) node.dataset.reason = record.reason;
+  node.setAttribute("data-testid", "record");
+
+  const head = el("div", "head");
+  head.appendChild(el("span", "seq", "#" + record.sequence));
+  const verdict = el("span", "verdict", refused ? "REFUSED" : "AUTHORISED");
+  verdict.setAttribute("data-testid", "verdict");
+  head.appendChild(verdict);
+  head.appendChild(el("span", "tool", record.tool_name));
+  if (record.reason) {
+    const reason = el("span", "reason", record.reason);
+    reason.setAttribute("data-testid", "reason");
+    head.appendChild(reason);
+  }
+  const status = el("span", "status", "task " + record.task_id + " · " + record.result_status);
+  status.setAttribute("data-testid", "attribution");
+  head.appendChild(status);
+  node.appendChild(head);
+
+  const args = el("pre", null, JSON.stringify(record.validated_arguments, null, 2));
+  args.setAttribute("data-testid", "arguments");
+  node.appendChild(args);
+
+  const checks = el("ol", "checks");
+  checks.setAttribute("data-testid", "checks");
+  for (const check of record.checks || []) {
+    const item = el("li", check.passed ? "passed" : "failed",
+      check.name + (check.detail ? " — " + check.detail : ""));
+    checks.appendChild(item);
+  }
+  node.appendChild(checks);
+  return node;
+}
+
+function renderRecords(records) {
+  const host = document.getElementById("records");
+  host.replaceChildren();
+  if (!records.length) {
+    host.appendChild(el("p", "empty", "No calls recorded for this task."));
+    return;
+  }
+  for (const record of records) host.appendChild(renderRecord(record));
+}
+
+fetch("trace.json")
+  .then((response) => response.json())
+  .then((payload) => {
+    renderSummary(payload.summary);
+    renderRecords(payload.records);
+    document.body.dataset.loaded = "true";
+  })
+  .catch((error) => {
+    document.getElementById("records").appendChild(
+      el("p", "empty", "Could not load the trace: " + error.message));
+    document.body.dataset.loaded = "error";
+  });
+</script>
+</body>
+</html>

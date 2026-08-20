@@ -10,8 +10,19 @@ an operator can actually see during an incident:
 - No interaction mutates a trace. The store is append-only and the interface
   exposes no write path.
 
-Empty until nodes N-21 and N-22. Nodes with no interface record the GUI tier as
-`n/a` **with a reason** in `ROADMAP.md`; absence is always a decision on the
-record, never an omission.
+Nodes with no interface record the GUI tier as `n/a` **with a reason** in
+`ROADMAP.md`; absence is always a decision on the record, never an omission.
 
-Selected by the `gui` marker. Run with `make test-gui`.
+## The trace under test is real
+
+The fixture drives the actual broker through a mixed run — an authorised read,
+a path escape, an out-of-scope call, an unapproved comment, an approved
+comment, and one call past the cap — and asserts against whatever it recorded.
+A GUI test over hand-written JSON would pass even if the broker stopped
+recording refusals, which is one of the things the viewer exists to show.
+
+Run with `make test-gui`. Requires the `gui` dependency group and a browser:
+
+```bash
+uv sync --group gui && uv run playwright install chromium
+```

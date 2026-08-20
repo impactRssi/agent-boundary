@@ -118,6 +118,24 @@ jobs:
       - name: Worked example runs offline
         run: uv run python examples/support_triage.py
 
+  gui:
+    name: gui (real browser)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v7
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+      - run: uv python install ${{ env.PYTHON_VERSION }}
+      - run: uv sync --group dev --group gui --extra mcp --frozen
+      - run: uv run playwright install --with-deps chromium
+      # Drives a real browser against a trace produced by the real broker. A
+      # GUI test over hand-written JSON would pass even if the broker stopped
+      # recording refusals, which is one of the things the viewer exists to show.
+      - name: GUI tier
+        run: uv run pytest tests/gui -v
+
   security:
     name: sast, dependency audit, secrets
     runs-on: ubuntu-latest
@@ -159,7 +177,7 @@ jobs:
   gate:
     name: gate
     runs-on: ubuntu-latest
-    needs: [static, unit, adversarial, e2e, security]
+    needs: [static, unit, adversarial, e2e, gui, security]
     if: always()
     steps:
       # A required check that passes when a needed job was skipped or cancelled
