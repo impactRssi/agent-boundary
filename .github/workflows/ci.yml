@@ -1,0 +1,154 @@
+# Every job here is blocking. There is no advisory step and no continue-on-error.
+#
+# The adversarial suite is a SEPARATE job rather than a stage of `unit`. It has
+# to be possible to look at a commit and see whether the attack corpus passed,
+# without that answer being averaged into a general test result. See ADR-0006.
+
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# Least privilege: no job here needs to write to the repository.
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Pinned so a toolchain bump is a reviewed commit, not a silent drift.
+  UV_VERSION: "0.9.9"
+  PYTHON_VERSION: "3.12"
+
+jobs:
+  static:
+    name: format, lint, types
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v7
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+      - run: uv python install ${{ env.PYTHON_VERSION }}
+      - run: uv sync --group dev --frozen
+      - name: Format check
+        run: uv run ruff format --check .
+      - name: Lint
+        run: uv run ruff check --output-format=github .
+      - name: Types
+        run: uv run mypy
+
+  unit:
+    name: unit tests and coverage floor
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v7
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+      - run: uv python install ${{ matrix.python-version }}
+      - run: uv sync --group dev --frozen
+      - name: Unit tier
+        run: uv run pytest tests/unit --cov=agentboundary --cov-report=term-missing
+
+  adversarial:
+    name: adversarial corpus (blocking)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v7
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+      - run: uv python install ${{ env.PYTHON_VERSION }}
+      - run: uv sync --group dev --frozen
+
+      # --adversarial-guard fails this job if the suite collected zero payloads
+      # or skipped one. Without it, a renamed directory or a broken marker
+      # produces a green tick having asserted nothing at all.
+      - name: Adversarial tier under the zero-collect and no-skip guard
+        run: uv run pytest tests/adversarial --adversarial-guard -v
+
+      # The guard lives in our own conftest, so a regression that disabled it
+      # would also hide itself. This asserts from outside that arming the guard
+      # against an empty corpus still fails the process.
+      - name: Prove the guard itself still fails closed
+        run: |
+          set +e
+          uv run pytest tests/unit --adversarial-guard -q > /dev/null 2>&1
+          status=$?
+          set -e
+          if [ "$status" -eq 0 ]; then
+            echo "::error::Adversarial guard did not fail on an empty corpus. The control is broken."
+            exit 1
+          fi
+          echo "Guard fails closed on an empty corpus (exit ${status})."
+
+  security:
+    name: sast, dependency audit, secrets
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          # gitleaks needs history in order to scan it.
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@v7
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+      - run: uv python install ${{ env.PYTHON_VERSION }}
+      - run: uv sync --group dev --frozen
+
+      # A security project that fails its own SAST is not shippable.
+      - name: SAST (bandit)
+        run: uv run bandit -c pyproject.toml -r src -ll
+
+      - name: SAST (semgrep)
+        run: |
+          uv tool install semgrep
+          uv tool run semgrep --config=p/python --config=p/security-audit \
+            --error --metrics=off src/
+
+      # Audits the hash-pinned lockfile rather than the live environment:
+      # --require-hashes means a substituted artifact fails rather than passes.
+      - name: Dependency audit
+        run: |
+          uv export --group dev --format requirements-txt --no-emit-project \
+            > .requirements.audit.txt
+          uv run pip-audit --strict --require-hashes -r .requirements.audit.txt
+
+      - name: Secret scan
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  gate:
+    name: gate
+    runs-on: ubuntu-latest
+    needs: [static, unit, adversarial, security]
+    if: always()
+    steps:
+      # A required check that passes when a needed job was skipped or cancelled
+      # is a check that does not gate anything.
+      - name: Fail unless every upstream job succeeded
+        run: |
+          results='${{ join(needs.*.result, " ") }}'
+          echo "upstream results: ${results}"
+          for r in ${results}; do
+            if [ "$r" != "success" ]; then
+              echo "::error::Gate failed: an upstream job reported '${r}'."
+              exit 1
+            fi
+          done
+          echo "All blocking jobs succeeded."
