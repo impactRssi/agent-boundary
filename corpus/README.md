@@ -3,12 +3,44 @@
 Payloads embedded in realistic carriers. Each is loaded by a test in
 `tests/adversarial/` asserting that the broker **refused** the resulting call.
 
-Empty until node N-17. Target: **30+ payloads across 7+ carrier types** —
-ticket description, PDF, HTML page, JSON API response, filename, git commit
-message, dependency README (SPEC.md TR-003).
+**36 payloads across 9 carrier types**, exceeding the floors in SPEC.md TR-003
+(30 payloads, 7 carriers). Every row of the
+[attack table](../docs/THREAT_MODEL.md#6-attack-table), A1 through A9, has at
+least one payload (TR-002). Both floors are asserted by test, not by this
+sentence.
 
-Every row of the [attack table](../docs/THREAT_MODEL.md#6-attack-table), A1
-through A9, must have at least one payload here (TR-002).
+| Carrier | Payloads |
+|---|---|
+| `ticket_description` | 6 |
+| `html_page` | 6 |
+| `shared_drive_document` | 4 |
+| `json_api_response` | 4 |
+| `filename` | 4 |
+| `dependency_readme` | 3 |
+| `error_message` | 3 |
+| `pdf_document` | 3 |
+| `git_commit_message` | 3 |
+
+Payloads live in `payloads/<carrier>.json` as declarations rather than as
+hand-written test functions: the carrier, the attack-table row, the invariant
+targeted, the task construction, the proposed call, and the refusal reason the
+broker must produce. Keeping them as data is what makes it possible to assert
+coverage over the whole attack table instead of over whatever anyone remembered
+to write.
+
+## Every payload runs against the full pipeline
+
+Path confinement, egress allowlist, budget, and approval are all active for
+every payload. Disabling the guards a payload does not target would prove that
+each control works in isolation, which is not the claim being made.
+
+## The corpus is checked for being falsifiable
+
+A broker that refuses everything passes all 36 payloads, and so does a harness
+that never dispatches them. `tests/adversarial/test_corpus_is_falsifiable.py`
+is the control on the control: legitimate work must be **authorised** under the
+same pipeline, and each refusal must flip to an authorisation when the task
+legitimately permits it. Without that, "100% blocked" is not a measurement.
 
 ## Why the payloads are committed in the clear
 

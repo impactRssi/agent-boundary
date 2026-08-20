@@ -21,7 +21,7 @@ class TestRefusals:
     def test_a_single_skip_is_refused(self) -> None:
         with pytest.raises(AdversarialSuiteInvalid, match="skipped 1 payload"):
             evaluate_suite(
-                SuiteOutcome(collected=12, skipped=("tests/adversarial/test_a1.py::test_ssh_key",))
+                SuiteOutcome(collected=42, skipped=("tests/adversarial/test_a1.py::test_ssh_key",))
             )
 
     def test_skip_is_refused_even_when_the_rest_passed(self) -> None:
@@ -34,7 +34,7 @@ class TestRefusals:
         """An operator reading CI output must know which payload to fix."""
         with pytest.raises(AdversarialSuiteInvalid) as excinfo:
             evaluate_suite(
-                SuiteOutcome(collected=3, skipped=("payload_b", "payload_a")),
+                SuiteOutcome(collected=42, skipped=("payload_b", "payload_a")),
             )
         message = str(excinfo.value)
         assert "payload_a" in message

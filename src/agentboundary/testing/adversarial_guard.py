@@ -14,11 +14,18 @@ from dataclasses import dataclass, field
 
 __all__ = ["AdversarialSuiteInvalid", "SuiteOutcome", "evaluate_suite"]
 
-#: Minimum payload count for the suite to be considered a control at all.
-#: Tightened to the corpus floor (30, per SPEC.md TR-003) when N-17 lands; until
-#: then any non-zero collection is accepted so that the guard itself can ship
-#: and be tested before the corpus exists.
-MINIMUM_PAYLOADS = 1
+#: Minimum number of collected adversarial test items for the suite to count as
+#: a control at all. This is a floor against catastrophic loss -- a moved
+#: directory, a broken marker, a bad testpaths edit -- not a measure of corpus
+#: breadth.
+#:
+#: Corpus breadth is asserted separately and precisely, by the coverage tests in
+#: tests/adversarial/: the 30-payload and 7-carrier floors of SPEC.md TR-003,
+#: and one payload per attack-table row (TR-002). Those assert over payload
+#: *declarations*; this asserts over what pytest actually collected. Both are
+#: needed, because a full corpus that pytest never discovered is still a suite
+#: that proved nothing.
+MINIMUM_PAYLOADS = 30
 
 
 class AdversarialSuiteInvalid(Exception):

@@ -10,5 +10,15 @@ from agentboundary.testing.adversarial_guard import (
     SuiteOutcome,
     evaluate_suite,
 )
+from agentboundary.testing.catalogue import reference_registry
+from agentboundary.testing.corpus import Payload, broker_for, load_corpus
 
-__all__ = ["AdversarialSuiteInvalid", "SuiteOutcome", "evaluate_suite"]
+__all__ = [
+    "AdversarialSuiteInvalid",
+    "Payload",
+    "SuiteOutcome",
+    "broker_for",
+    "evaluate_suite",
+    "load_corpus",
+    "reference_registry",
+]
