@@ -12,21 +12,55 @@ tested undo.
 
 from __future__ import annotations
 
+from typing import Final
+
 from agentboundary.model import Irreversibility, Tool
 from agentboundary.registry import ToolRegistry
 
-__all__ = ["reference_registry"]
+__all__ = ["MAX_PATH_ARGUMENT_LENGTH", "reference_registry"]
+
+#: Longest path argument the schema accepts, in characters.
+#:
+#: 255, because that is the largest number the filesystem will honour whatever
+#: shape the argument takes. It was 4096 -- the Linux ``PATH_MAX`` -- and the
+#: generated benign corpus showed that promise could not be kept: an argument of
+#: exactly 4096 characters passed validation and then failed to resolve with
+#: ``ENAMETOOLONG``, because the resolved path is ``fs_root`` *plus* the
+#: argument, and macOS caps a whole path at 1024. The guard refusing an
+#: unresolvable path is right -- undecidable means refuse -- so the defect was
+#: the schema, which declared a bound the layer beneath it never agreed to.
+#:
+#: Two ceilings apply, and 255 is under both for any root:
+#:
+#: - ``NAME_MAX`` is 255 on ext4, APFS, XFS and NTFS. The worst-case shape of a
+#:   path argument is a single component, so a bound above 255 is refusable on
+#:   spelling alone.
+#: - ``PATH_MAX`` is 1024 on macOS and 4096 on Linux, and it bounds the
+#:   *resolved* path. A schema cannot see the task's root, so it must leave room
+#:   for one: 255 leaves at least 768 characters of root on the tighter of the
+#:   two platforms this project is tested on.
+#:
+#: Not claimed for legacy Windows, where ``MAX_PATH`` is 260 for the whole path
+#: and no argument bound worth having clears it. A deployment there sets its own
+#: number; the point of this one is that it is derived rather than round.
+#:
+#: Verified by test rather than asserted here: ``tests/unit/test_confinement.py``
+#: submits a path of exactly this length, as one component and as several, and
+#: fails if the filesystem under CI will not resolve it.
+MAX_PATH_ARGUMENT_LENGTH: Final[int] = 255
 
 _PATH_SCHEMA = {
     "type": "object",
-    "properties": {"path": {"type": "string", "minLength": 1, "maxLength": 4096}},
+    "properties": {
+        "path": {"type": "string", "minLength": 1, "maxLength": MAX_PATH_ARGUMENT_LENGTH}
+    },
     "required": ["path"],
 }
 
 _WRITE_SCHEMA = {
     "type": "object",
     "properties": {
-        "path": {"type": "string", "minLength": 1, "maxLength": 4096},
+        "path": {"type": "string", "minLength": 1, "maxLength": MAX_PATH_ARGUMENT_LENGTH},
         "content": {"type": "string", "maxLength": 1_000_000},
     },
     "required": ["path", "content"],

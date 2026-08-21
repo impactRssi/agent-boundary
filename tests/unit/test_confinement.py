@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
@@ -15,6 +16,7 @@ from agentboundary.confinement import (
 from agentboundary.errors import RefusalReason
 from agentboundary.guards import CallContext
 from agentboundary.model import Caps, Irreversibility, ProposedCall, Task, Tool
+from agentboundary.testing import reference_registry
 
 CAPS = Caps(max_calls=5, max_cost=10.0, max_wall_clock_s=30.0)
 TOOL = Tool(name="fs.read", arg_schema={}, irreversibility=Irreversibility.READ)
@@ -180,6 +182,69 @@ class TestPathConfinementGuard:
     def test_the_watched_argument_names_are_configurable(self, tmp_path: Path) -> None:
         guard = PathConfinementGuard(argument_names={"archive"})
         assert not guard.check(_context({"archive": "/etc/passwd"}, root=str(tmp_path))).passed
+
+
+def _declared_path_bound() -> int:
+    """The catalogue's own maxLength for a path, read from the schema it ships."""
+    bounds = {
+        int(tool.arg_schema["properties"]["path"]["maxLength"])
+        for tool in reference_registry()
+        if "path" in tool.arg_schema.get("properties", {})
+    }
+    assert len(bounds) == 1, f"the catalogue declares more than one path bound: {sorted(bounds)}"
+    return bounds.pop()
+
+
+class TestTheDeclaredPathBoundHolds:
+    """A schema may not promise a length the filesystem beneath it refuses (N-40).
+
+    The generated benign corpus submitted a path of exactly the declared
+    ``maxLength``, then watched the OS refuse to resolve it. The guard's
+    behaviour was right and is unchanged below: an unresolvable path is
+    undecidable, and undecidable means refuse. What changed is the number, so
+    that passing validation and being resolvable stop being different claims.
+    """
+
+    def test_a_path_the_filesystem_cannot_resolve_is_still_refused(self, tmp_path: Path) -> None:
+        """Fail closed. The bound is a promise about the schema, not a relaxation."""
+        result = PathConfinementGuard().check(_context({"path": "p" * 4096}, root=str(tmp_path)))
+        assert not result.passed
+        assert result.reason is RefusalReason.PATH_OUTSIDE_ROOT
+        assert "could not be resolved" in result.detail
+
+    def test_a_component_over_the_bound_is_still_refused(self, tmp_path: Path) -> None:
+        """One character past NAME_MAX is already unresolvable on ext4 and APFS."""
+        result = PathConfinementGuard().check(_context({"path": "p" * 256}, root=str(tmp_path)))
+        assert not result.passed
+        assert result.reason is RefusalReason.PATH_OUTSIDE_ROOT
+
+    def test_the_declared_bound_resolves_as_a_single_component(self, tmp_path: Path) -> None:
+        """The worst-case shape: the whole argument is one filename."""
+        bound = _declared_path_bound()
+        result = PathConfinementGuard().check(_context({"path": "p" * bound}, root=str(tmp_path)))
+        assert result.passed, result.detail
+
+    def test_the_declared_bound_resolves_as_a_nested_path(self, tmp_path: Path) -> None:
+        """And the shape a real caller uses, at exactly the same length."""
+        bound = _declared_path_bound()
+        segments = ["s" * 15] * (bound // 16)
+        candidate = "/".join(segments)
+        candidate += "/" + "f" * (bound - len(candidate) - 1)
+        assert len(candidate) == bound
+        result = PathConfinementGuard().check(_context({"path": candidate}, root=str(tmp_path)))
+        assert result.passed, result.detail
+
+    def test_the_bound_leaves_room_for_a_root_under_the_platform_ceiling(
+        self, tmp_path: Path
+    ) -> None:
+        """PATH_MAX bounds the *resolved* path, and the schema cannot see the root.
+
+        Asserted against the running platform rather than a constant: this is
+        the check that fails if the number is ported to a tighter filesystem.
+        """
+        bound = _declared_path_bound()
+        assert bound <= os.pathconf(tmp_path, "PC_NAME_MAX")
+        assert bound + len(str(tmp_path)) + 1 <= os.pathconf(tmp_path, "PC_PATH_MAX")
 
 
 class TestEgressGuard:
