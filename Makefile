@@ -5,7 +5,7 @@
 
 .DEFAULT_GOAL := help
 .PHONY: help install format format-check lint types test-unit test-adversarial \
-        test-e2e test-gui coverage sast audit secrets check clean
+        test-e2e test-gui coverage sast audit secrets actions-pinned check clean
 
 UV ?= uv
 RUN := $(UV) run
@@ -70,9 +70,15 @@ secrets: ## Secret scan over the full history
 		     echo "  brew install gitleaks"; exit 1; }
 	gitleaks detect --no-banner --redact
 
-check: format-check lint types test-unit test-adversarial test-e2e test-gui coverage sast audit secrets ## The full gate, in CI order
+# A third-party action referenced by tag is code an upstream owner can swap
+# after review, inside a job holding this repository's token. The pin is a
+# convention until something fails the build over it, so this runs in the gate.
+actions-pinned: ## Fail if any workflow references an action by a movable tag
+	$(RUN) python scripts/check_action_pins.py
+
+check: format-check lint types test-unit test-adversarial test-e2e test-gui coverage sast audit secrets actions-pinned ## The full gate, in CI order
 	@echo
-	@echo "gate passed: format, lint, types, unit, adversarial, e2e, gui, coverage, sast, audit, secrets"
+	@echo "gate passed: format, lint, types, unit, adversarial, e2e, gui, coverage, sast, audit, secrets, action pins"
 
 clean: ## Remove build and cache artifacts
 	rm -f .requirements.audit.txt
