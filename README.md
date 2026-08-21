@@ -260,55 +260,62 @@ vulnerability under [`SECURITY.md`](SECURITY.md), not a feature request:
 
 ## 8. Getting started
 
-Requires Python 3.11+ and [uv](https://docs.astral.sh/uv/).
+Full guide: [`docs/INSTALL.md`](docs/INSTALL.md).
+
+### See it refuse a real attack
 
 ```bash
 uv sync --group dev
-make check
-```
-
-`make check` runs the same gate CI runs: format, lint, type check, unit tests
-with coverage, the adversarial suite under its guard, SAST, dependency audit,
-and secret scan. All blocking.
-
-### See it work
-
-```bash
 uv run python examples/support_triage.py
 ```
 
-An agent triaging a poisoned support ticket. The attacker has no session and no
-key — they filed a ticket. Everything they wrote is read by the agent; nothing
-they wrote reaches an effect.
+An agent triages a support ticket written by an attacker who has no session and
+no API key — they filed a ticket, which is the entire capability the threat
+model grants them. Everything they wrote is read by the agent; nothing they
+wrote reaches an effect:
+
+```
+AUTHORISED     legitimate: read the runbook
+AUTHORISED     legitimate: read the ticket
+REFUSED [path_outside_root]     steered by the ticket: read /etc/passwd
+REFUSED [approval_mismatch]     steered by the ticket: publish it
+REFUSED [tool_not_in_scope]     out of scope entirely
+AUTHORISED     approved comment
+```
 
 ### Wire it to your agent
 
+Not on PyPI yet — install from the repository:
+
 ```bash
-pip install "agent-boundary[mcp]"
+uv pip install "agent-boundary[mcp] @ git+https://github.com/impactRssi/agent-boundary@v0.1.0"
 python -m agentboundary --task task.json --dry-run
 ```
 
-The task file is the security configuration — scope, filesystem root, egress
-allowlist, caps. See [`examples/dropin/`](examples/dropin/) for a worked
-configuration and the two placement rules that matter.
+The task file is the security configuration: scope, filesystem root, egress
+allowlist, caps. `--dry-run` prints what it resolved to and exits. See
+[`examples/dropin/`](examples/dropin/) for a worked configuration and the two
+file placements that carry security weight.
 
-### Read a trace
+### Develop on it
 
-```python
-from agentboundary.viewer import serve
-
-serve(audit.records())
+```bash
+uv sync --group dev --group gui --extra mcp
+uv run playwright install chromium
+make check
 ```
 
-Read-only, in a browser. Refusals read as refused, with their reason.
-
----
+`make check` is the whole gate in CI order — format, lint, types, unit,
+adversarial, e2e, gui, coverage, SAST, dependency audit, secret scan. All
+blocking. `uv sync --group dev` alone is **not** enough: `mypy` type-checks the
+MCP adapter and the GUI tier.
 
 ## 9. Documentation
 
 | Document | What is in it |
 |---|---|
 | [`docs/THREAT_MODEL.md`](docs/THREAT_MODEL.md) | STRIDE over the agent loop, trust boundaries, attack table, accepted residual risk |
+| [`docs/INSTALL.md`](docs/INSTALL.md) | Installing it, using it, and developing on it |
 | [`docs/SPEC.md`](docs/SPEC.md) | Normative requirements, each traced to an invariant or an ADR |
 | [`docs/WORKING_METHODS.md`](docs/WORKING_METHODS.md) | Graph-based decomposition, branch policy, the three test tiers |
 | [`docs/adr/`](docs/adr/) | The load-bearing decisions, each naming what was rejected and why |
