@@ -437,6 +437,33 @@ cloned it. A reader scans for thirty seconds.
 - **Tests** n/a — documentation node.
 - [x] Merged
 
+### C6 — Defects the measurement found · owner: security engineer
+
+Both were surfaced by the generated benign corpus (N-37) and published before
+being fixed, so the measurement stands on what it actually found.
+
+#### N-39 — Normalise the trailing root dot in the egress allowlist
+- **Depends on** N-37 · **Invariant** I4
+- **Exit** `https://docs.internal./x` is authorised against an allowlist of
+  `docs.internal`. It is the same host — the trailing dot is the DNS root
+  label. Normalise **both** sides of the comparison, symmetrically: normalising
+  only the URL would widen the allowlist, and normalising only the allowlist
+  would not fix it. Refusal-path tests first, and confirm no near-miss host
+  gains admission.
+- **Tests** U · A — a corpus payload asserting the dot cannot smuggle a
+  *different* host past the allowlist · E.
+- [ ] Merged
+
+#### N-40 — Declare a path bound the filesystem honours
+- **Depends on** N-37 · **Invariant** none
+- **Exit** The catalogue declares `maxLength: 4096` for path arguments, which
+  no filesystem in the test environment accepts as a single component. The
+  guard failing closed on `ENAMETOOLONG` is correct behaviour; the schema
+  promising something unreachable is the defect. Pick a bound that holds, and
+  say why in the catalogue.
+- **Tests** U · E.
+- [ ] Merged
+
 ### C4 — Distribution · owner: technical lead
 
 None of the above is visible while the repository exists only on one laptop.
@@ -467,7 +494,7 @@ None of the above is visible while the repository exists only on one laptop.
   source — recorded agent traffic, or written by someone who has not read the
   guards — turns the weakest published number into a measurement.
 - **Tests** E · **GUI** n/a.
-- [ ] Merged
+- [x] Merged
 
 #### N-38 — Attribute the overhead per guard
 - **Depends on** N-26 · **Invariant** none
@@ -475,7 +502,7 @@ None of the above is visible while the repository exists only on one laptop.
   tells an adopter which control costs what, and tells us where a regression
   landed.
 - **Tests** E · **GUI** n/a.
-- [ ] Merged
+- [x] Merged
 
 ---
 
