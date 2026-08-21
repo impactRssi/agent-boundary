@@ -162,7 +162,7 @@ uv run python benchmarks/harness.py
 Offline, single process, no network. Full output:
 [`benchmarks/results.json`](benchmarks/results.json).
 
-**Conditions for every figure below:** Python 3.13.13 on Darwin/arm64, offline, synthetic corpora, single process, no warm cache.
+**Conditions for every figure below:** Python 3.13.13 on Darwin/arm64, offline, synthetic corpora, single process, no warm cache, load average 9.02 over 12 logical CPUs while the timing figures were taken.
 
 ### Injection corpus: 36/36 blocked
 
@@ -225,16 +225,59 @@ mechanical but the shapes they are drawn from are authored here. This is not an
 independent third-party measurement, and it is not recorded traffic. Full
 reading: [`benchmarks/README.md`](benchmarks/README.md).
 
-### Broker overhead: 0.1463 ms mean per call
+### Broker overhead: 0.1309 ms mean per authorised `fs.read`
 
-Over 2000 iterations after a 200-call warm-up:
-mean **0.1463 ms**, median 0.1269 ms, p95 0.2922 ms,
-p99 0.4287 ms.
+Over 5 repeats of 2000 iterations each, every sample an authorised call, after
+a 200-call warm-up per repeat: mean **0.1309 ms**, median 0.1271 ms, p95
+0.1363 ms, p99 0.2131 ms, max 4.6859 ms. The five per-repeat means were 0.1255,
+0.1309, 0.1287, 0.1391 and 0.1304 ms — a spread of 0.0136 ms, which is the
+reader's guide to how much of the third decimal is signal on a machine under
+this load.
 
 Measures authorisation only — scope resolution, schema validation, path
 confinement, egress check, budget accounting, approval lookup. **Excludes** the
 ingest path and the handler's own work, both of which usually dominate a real
 call.
+
+**Corrected since the previous release.** The loop that produced the earlier
+figure ran 2200 calls against a 1000-call cap, so 1200 of its 2000 samples were
+budget-exhausted refusals — a shorter path that skips the approval lookup and
+the ledger debit. It published that mixture as the cost of authorising a call.
+The caps in the overhead loop are now unreachable and the harness fails if any
+sample is refused.
+
+### Where the overhead goes, per pipeline stage
+
+One aggregate cannot tell an adopter which control costs what, or locate a
+regression. Milliseconds per call, 2000 iterations per call shape, all four
+shapes authorised end to end so that every stage runs:
+
+| Stage | `fs.read` | `fs.write` (approved) | `http.get` | `tickets.get` |
+|---|---|---|---|---|
+| Scope resolution | 0.00013 | 0.00013 | 0.00013 | 0.00013 |
+| Schema validation | 0.00317 | 0.00421 | 0.00329 | 0.00324 |
+| Path confinement | **0.10154** | **0.11369** | 0.00085 | 0.00090 |
+| Egress allowlist | 0.00103 | 0.00114 | 0.00455 | 0.00081 |
+| Budget accounting | 0.00552 | 0.00594 | 0.00434 | 0.00453 |
+| Approval lookup | 0.00147 | 0.00720 | 0.00112 | 0.00114 |
+| Unattributed | 0.01450 | 0.01960 | 0.01290 | 0.01200 |
+| **Total** | **0.1273** | **0.1519** | **0.0271** | **0.0227** |
+
+**Path confinement is the broker's cost.** It is 0.10154 ms of the 0.1273 ms an
+`fs.read` costs — 80% — because confinement resolves the path one component at
+a time against the filesystem rather than pattern-matching it, which is the
+property [I4](docs/THREAT_MODEL.md) depends on. A call with no path argument
+costs 0.0227–0.0271 ms, roughly five times less. Every other control is at or
+below 0.008 ms.
+
+Read with these caveats, all four in the same breath as the numbers: each guard
+figure includes one `perf_counter` pair (0.00009 ms here), so each is an upper
+bound; scope resolution is at that instrument floor and its figure means "too
+cheap to measure this way"; the unattributed row is guard dispatch, one `Check`
+record per stage and building the `Decision`, published rather than folded into
+a stage because it also absorbs the measurement error; and a *refused* call is
+cheaper than any of these, because the pipeline short-circuits at the guard
+that refused.
 
 ### Budget exhaustion fails closed
 

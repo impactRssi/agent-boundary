@@ -104,6 +104,66 @@ reproduces exactly the bias the generated corpus exists to remove.
   publishes that census alongside the rate so an absent keyword does not read
   as a covered one.
 
+## The overhead figure — attributed, and corrected
+
+Published as one mean it says what the broker costs; it does not say which
+control charged it, and it cannot locate a regression. The harness now measures
+each pipeline stage separately, over four call shapes, because which control
+does real work depends on the arguments: a path argument exercises confinement
+and leaves the egress check with nothing to do, and the reverse.
+
+Milliseconds per call, 2000 iterations per shape, Python 3.13.13 on Darwin/arm64
+(Mac15,6, 12 logical CPUs, load average 9.02 during the run), offline, all four
+shapes authorised end to end so every stage runs:
+
+| Stage | `fs.read` | `fs.write` (approved) | `http.get` | `tickets.get` |
+|---|---|---|---|---|
+| Scope resolution | 0.00013 | 0.00013 | 0.00013 | 0.00013 |
+| Schema validation | 0.00317 | 0.00421 | 0.00329 | 0.00324 |
+| Path confinement | 0.10154 | 0.11369 | 0.00085 | 0.00090 |
+| Egress allowlist | 0.00103 | 0.00114 | 0.00455 | 0.00081 |
+| Budget accounting | 0.00552 | 0.00594 | 0.00434 | 0.00453 |
+| Approval lookup | 0.00147 | 0.00720 | 0.00112 | 0.00114 |
+| Unattributed | 0.01450 | 0.01960 | 0.01290 | 0.01200 |
+| **Total** | **0.1273** | **0.1519** | **0.0271** | **0.0227** |
+
+Path confinement is 80% of the cost of authorising an `fs.read`, and that is
+the expected shape rather than a defect: confinement resolves the path one
+component at a time against the filesystem instead of pattern-matching it,
+which is exactly the property I4 rests on. Budget accounting is charged twice
+per authorised call — consult, then debit — and both halves are counted here.
+
+Caveats that belong next to those numbers:
+
+* Each guard figure includes one `perf_counter` pair, measured at 0.00009 ms on
+  this machine, so each is an upper bound.
+* Scope resolution sits at that instrument floor. Its figure means "too cheap
+  to measure this way", not "0.00013 ms".
+* The unattributed row is guard dispatch, one `Check` record per stage and
+  building the `Decision`. It is published rather than folded into a stage
+  because it also absorbs the measurement error — a small negative value there
+  would mean the attribution had reached the clock's resolution, not that the
+  broker is free.
+* The total is measured on a *clean* pipeline. Timing wrappers inflate the
+  instrumented one, and publishing an instrumented total as the headline would
+  overstate what an adopter pays.
+* A refused call is cheaper than every figure above, because the pipeline
+  short-circuits at the guard that refused.
+* Ingest and the handler's own work are excluded, and both usually dominate a
+  real call.
+
+**A correction, published rather than quietly fixed.** The loop behind the
+previously published overhead figure ran 2200 calls against a 1000-call cap, so
+1200 of its 2000 samples were budget-exhausted refusals — the shorter path,
+which skips the approval lookup and the ledger debit. It published that mixture
+as the per-call cost of authorisation. The overhead loop now runs under caps it
+cannot reach, the harness raises if any sample comes back refused, and the E2E
+tier asserts the flag that says so.
+
+Run-to-run spread is published with the headline for the same reason: five
+repeats of 2000 iterations gave means of 0.1255, 0.1309, 0.1287, 0.1391 and
+0.1304 ms. A single mean on a laptop reads as more precise than it is.
+
 ## Rules
 
 - No bare percentage. Ever.

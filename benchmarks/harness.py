@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import platform
 import statistics
 import time
@@ -27,7 +28,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import Any
+from typing import Any, Final
 
 from agentboundary.approval import (
     ApprovalGuard,
@@ -38,8 +39,9 @@ from agentboundary.approval import (
 from agentboundary.broker import Broker
 from agentboundary.budget import BudgetGuard, BudgetLedger
 from agentboundary.confinement import EgressGuard, PathConfinementGuard
-from agentboundary.guards import Guard
+from agentboundary.guards import CallContext, CommittingGuard, Guard, GuardResult
 from agentboundary.model import Caps, Irreversibility, ProposedCall, Task
+from agentboundary.schema import validate
 from agentboundary.testing import load_corpus
 from agentboundary.testing.catalogue import reference_registry
 
@@ -69,6 +71,24 @@ BENIGN_FILE = ROOT / "benchmarks" / "benign" / "tasks.json"
 
 CAPS = Caps(max_calls=1000, max_cost=10_000.0, max_wall_clock_s=3600.0)
 
+#: Deliberately unreachable. The overhead loops measure the authorisation
+#: path, and a loop that exhausts its own budget half way through measures
+#: the refusal path for the rest of its samples instead.
+OVERHEAD_CAPS = Caps(max_calls=1_000_000_000, max_cost=1e12, max_wall_clock_s=1e9)
+
+
+def _load_average() -> float | None:
+    """The 1-minute load average, or None where the platform has none.
+
+    Timing figures measured on a busy machine are worth less than the same
+    figures measured on an idle one, and the difference is invisible unless the
+    load is recorded next to them.
+    """
+    try:
+        return round(os.getloadavg()[0], 2)
+    except (OSError, AttributeError):  # pragma: no cover -- platform-dependent
+        return None
+
 
 @dataclass
 class Conditions:
@@ -77,13 +97,21 @@ class Conditions:
     python: str = field(default_factory=platform.python_version)
     machine: str = field(default_factory=platform.machine)
     system: str = field(default_factory=platform.system)
+    cpus: int | None = field(default_factory=os.cpu_count)
+    load_average_1m: float | None = field(default_factory=_load_average)
     offline: bool = True
 
     def describe(self) -> str:
+        load = (
+            f"load average {self.load_average_1m} over {self.cpus} logical CPUs"
+            if self.load_average_1m is not None
+            else f"{self.cpus} logical CPUs, load average unavailable"
+        )
         return (
             f"Python {self.python} on {self.system}/{self.machine}, "
             f"{'offline' if self.offline else 'network-enabled'}, "
-            f"synthetic corpora, single process, no warm cache"
+            f"synthetic corpora, single process, no warm cache, "
+            f"{load} while the timing figures were taken"
         )
 
 
@@ -283,45 +311,326 @@ def measure_false_refusals() -> dict[str, Any]:
     }
 
 
-def measure_overhead(iterations: int = 2000) -> dict[str, Any]:
-    """Per-call broker overhead, in milliseconds, with its distribution."""
-    with TemporaryDirectory(prefix="ab-overhead-") as raw_root:
-        workspace = Path(raw_root) / "workspace"
-        workspace.mkdir(parents=True)
-        (workspace / "runbook.md").write_text("x", encoding="utf-8")
+class _TimedGuard:
+    """Attributes one guard's cost without changing what the pipeline decides.
 
-        task = Task(
-            id="overhead",
-            tool_scope=frozenset({"fs.read"}),
-            fs_root=str(workspace),
-            egress_allowlist=frozenset(),
-            caps=CAPS,
-        )
-        broker = Broker(task, reference_registry().scope_for(task), _guards(task, ApprovalStore()))
-        call = ProposedCall("fs.read", {"path": "runbook.md"})
+    The wrapper sits inside a real :class:`Broker`, so ordering, short-circuit
+    and commit behaviour are the real ones. It costs one ``perf_counter`` pair
+    per call, which is measured separately and published next to the figures it
+    inflates -- an attribution whose instrument's cost is unstated is not an
+    attribution.
+    """
 
-        for _ in range(200):  # warm the interpreter, not a cache
-            broker.authorise(call)
+    __slots__ = ("_guard", "calls", "elapsed_s")
 
-        samples: list[float] = []
-        for _ in range(iterations):
-            started = time.perf_counter()
-            broker.authorise(call)
-            samples.append((time.perf_counter() - started) * 1000.0)
+    def __init__(self, guard: Guard) -> None:
+        self._guard = guard
+        self.elapsed_s = 0.0
+        self.calls = 0
 
+    @property
+    def name(self) -> str:
+        return self._guard.name
+
+    def reset(self) -> None:
+        self.elapsed_s = 0.0
+        self.calls = 0
+
+    def check(self, context: CallContext) -> GuardResult:
+        started = time.perf_counter()
+        result = self._guard.check(context)
+        self.elapsed_s += time.perf_counter() - started
+        self.calls += 1
+        return result
+
+
+class _TimedCommittingGuard(_TimedGuard):
+    """As above, plus the commit half of a stateful guard's cost.
+
+    Budget accounting is charged twice per authorised call -- once to consult
+    the ledger, once to debit it -- and attributing only the consult would
+    under-report the control that actually binds.
+    """
+
+    __slots__ = ()
+
+    def commit(self, context: CallContext) -> None:
+        started = time.perf_counter()
+        # `commit` exists on this branch by construction: the factory below
+        # only wraps a guard that satisfies the CommittingGuard protocol.
+        self._guard.commit(context)  # type: ignore[attr-defined]
+        self.elapsed_s += time.perf_counter() - started
+
+
+def _timed(guard: Guard) -> _TimedGuard:
+    if isinstance(guard, CommittingGuard):
+        return _TimedCommittingGuard(guard)
+    return _TimedGuard(guard)
+
+
+def _timer_pair_ms(iterations: int) -> float:
+    """What one ``perf_counter`` pair costs on this machine, in milliseconds."""
+    started = time.perf_counter()
+    for _ in range(iterations):
+        inner = time.perf_counter()
+        time.perf_counter() - inner
+    return (time.perf_counter() - started) / iterations * 1000.0
+
+
+@dataclass(frozen=True)
+class _Scenario:
+    """One call shape. Which controls do real work depends on the arguments."""
+
+    label: str
+    tool_name: str
+    arguments: dict[str, Any]
+    tool_scope: frozenset[str]
+    egress_allowlist: frozenset[str]
+    approved: bool
+
+
+def _scenarios() -> tuple[_Scenario, ...]:
+    return (
+        _Scenario(
+            "fs.read -- one path argument, no egress",
+            "fs.read",
+            {"path": "runbook.md"},
+            frozenset({"fs.read"}),
+            frozenset(),
+            approved=False,
+        ),
+        _Scenario(
+            "fs.write -- one path argument, irreversible and approved",
+            "fs.write",
+            {"path": "docs/summary.md", "content": "Resolved."},
+            frozenset({"fs.write"}),
+            frozenset(),
+            approved=True,
+        ),
+        _Scenario(
+            "http.get -- one url argument, no path",
+            "http.get",
+            {"url": "https://docs.internal/runbook"},
+            frozenset({"http.get"}),
+            frozenset({"docs.internal"}),
+            approved=False,
+        ),
+        _Scenario(
+            "tickets.get -- neither a path nor a url",
+            "tickets.get",
+            {"ticket_id": 4821},
+            frozenset({"tickets.get"}),
+            frozenset(),
+            approved=False,
+        ),
+    )
+
+
+def _task_for(scenario: _Scenario, workspace: Path) -> Task:
+    return Task(
+        id=f"overhead-{scenario.tool_name}",
+        tool_scope=scenario.tool_scope,
+        fs_root=str(workspace),
+        egress_allowlist=scenario.egress_allowlist,
+        caps=OVERHEAD_CAPS,
+    )
+
+
+def _approvals_for(scenario: _Scenario, task: Task) -> ApprovalStore:
+    if not scenario.approved:
+        return ApprovalStore()
+    return ApprovalStore(
+        [
+            ApprovalRecord(
+                task_id=task.id,
+                tool_name=scenario.tool_name,
+                arg_digest=argument_digest(scenario.arguments),
+                granted_by="operator@example.test",
+                expires_at=time.time() + 3600,
+            )
+        ]
+    )
+
+
+def _time_authorisation(broker: Broker, call: ProposedCall, iterations: int) -> list[float]:
+    """Warm up, then sample. Every sample must be an authorised call.
+
+    The caps are set so the budget cannot bind: a loop that exhausts its own
+    budget half way through stops measuring the authorisation path and starts
+    measuring the refusal path, which is cheaper because it short-circuits.
+    """
+    for _ in range(200):  # warm the interpreter, not a cache
+        broker.authorise(call)
+    samples: list[float] = []
+    for _ in range(iterations):
+        started = time.perf_counter()
+        decision = broker.authorise(call)
+        samples.append((time.perf_counter() - started) * 1000.0)
+        if not decision.authorised:  # pragma: no cover -- caps cannot bind here
+            msg = f"overhead sample was refused ({decision.reason}); it measures the wrong path"
+            raise AssertionError(msg)
+    return samples
+
+
+def _distribution(samples: Sequence[float]) -> dict[str, Any]:
     ordered = sorted(samples)
     return {
-        "iterations": iterations,
         "mean_ms": round(statistics.fmean(samples), 4),
         "median_ms": round(statistics.median(samples), 4),
         "p95_ms": round(ordered[int(len(ordered) * 0.95)], 4),
         "p99_ms": round(ordered[int(len(ordered) * 0.99)], 4),
         "max_ms": round(ordered[-1], 4),
-        "measures": (
-            "authorisation only: scope resolution, schema validation, path "
-            "confinement, egress check, budget accounting, approval lookup. "
-            "Excludes ingest and the handler's own work."
+    }
+
+
+_MEASURES: Final[str] = (
+    "authorisation only: scope resolution, schema validation, path "
+    "confinement, egress check, budget accounting, approval lookup. "
+    "Excludes ingest and the handler's own work."
+)
+
+
+def measure_overhead(iterations: int = 2000, repeats: int = 5) -> dict[str, Any]:
+    """Per-call broker overhead, in milliseconds, with its distribution.
+
+    Repeated, and the per-repeat means published, because a single mean on a
+    laptop reads as more precise than it is. The spread between repeats is the
+    reader's guide to which decimal place is signal.
+    """
+    scenario = _scenarios()[0]
+    call = ProposedCall("fs.read", {"path": "runbook.md"})
+    samples: list[float] = []
+    repeat_means: list[float] = []
+
+    with TemporaryDirectory(prefix="ab-overhead-") as raw_root:
+        workspace = Path(raw_root) / "workspace"
+        workspace.mkdir(parents=True)
+        (workspace / "runbook.md").write_text("x", encoding="utf-8")
+
+        for _ in range(repeats):
+            task = _task_for(scenario, workspace)
+            broker = Broker(
+                task,
+                reference_registry().scope_for(task),
+                _guards(task, ApprovalStore()),
+            )
+            batch = _time_authorisation(broker, call, iterations)
+            repeat_means.append(round(statistics.fmean(batch), 4))
+            samples.extend(batch)
+
+    return {
+        "iterations": iterations,
+        "repeats": repeats,
+        "call_shape": scenario.label,
+        **_distribution(samples),
+        "repeat_means_ms": repeat_means,
+        "repeat_mean_spread_ms": round(max(repeat_means) - min(repeat_means), 4),
+        # A regression guard as much as a caveat: the loop this replaced ran
+        # 2200 calls against a 1000-call cap, so 1200 of its 2000 samples were
+        # budget-exhausted refusals, which short-circuit before the approval
+        # guard and skip the commit. It published a mixture as a per-call cost.
+        "all_samples_authorised": True,
+        "measures": _MEASURES,
+    }
+
+
+def measure_overhead_by_stage(iterations: int = 2000) -> dict[str, Any]:
+    """Where the per-call overhead goes, stage by stage (N-38).
+
+    One aggregate tells an adopter what the broker costs; it does not tell them
+    which control charged it, and it does not locate a regression. Each guard
+    is measured inside a real pipeline through a timing wrapper; scope
+    resolution and schema validation are measured directly on the same inputs,
+    because they are broker-internal steps rather than guards.
+
+    Four call shapes, because which control does real work depends on the
+    arguments: a path argument exercises confinement and leaves the egress
+    check with nothing to do, and vice versa.
+    """
+    timer_pair = _timer_pair_ms(min(iterations * 5, 20_000))
+    scenarios: dict[str, Any] = {}
+
+    with TemporaryDirectory(prefix="ab-stages-") as raw_root:
+        workspace = Path(raw_root) / "workspace"
+        (workspace / "docs").mkdir(parents=True)
+        (workspace / "runbook.md").write_text("x", encoding="utf-8")
+
+        registry = reference_registry()
+        for scenario in _scenarios():
+            task = _task_for(scenario, workspace)
+            scoped = registry.scope_for(task)
+            tool = scoped.get(scenario.tool_name)
+            assert tool is not None  # noqa: S101 -- the catalogue declares it
+            call = ProposedCall(scenario.tool_name, scenario.arguments)
+
+            # The two broker-internal steps, on exactly the inputs the broker
+            # would hand them.
+            started = time.perf_counter()
+            for _ in range(iterations):
+                scoped.get(scenario.tool_name)
+            scope_ms = (time.perf_counter() - started) / iterations * 1000.0
+
+            started = time.perf_counter()
+            for _ in range(iterations):
+                validate(scenario.arguments, tool.arg_schema)
+            schema_ms = (time.perf_counter() - started) / iterations * 1000.0
+
+            # The guards, inside a real pipeline.
+            timed = [_timed(guard) for guard in _guards(task, _approvals_for(scenario, task))]
+            instrumented = Broker(task, scoped, timed)
+            for _ in range(200):
+                instrumented.authorise(call)
+            for guard in timed:
+                guard.reset()
+            for _ in range(iterations):
+                instrumented.authorise(call)
+
+            stages = {
+                "scope_resolution": round(scope_ms, 5),
+                "schema_validation": round(schema_ms, 5),
+            }
+            for guard in timed:
+                stages[guard.name] = round(guard.elapsed_s / iterations * 1000.0, 5)
+
+            # The total is measured on a clean pipeline: the wrappers above
+            # inflate it, and publishing an instrumented total as the headline
+            # would overstate what an adopter pays.
+            clean = Broker(task, scoped, _guards(task, _approvals_for(scenario, task)))
+            total_ms = statistics.fmean(_time_authorisation(clean, call, iterations))
+
+            attributed = sum(stages.values())
+            scenarios[scenario.label] = {
+                "total_ms": round(total_ms, 4),
+                "stages_ms": stages,
+                # A stage whose figure is within a few timer pairs of zero is
+                # not distinguishable from the instrument that measured it.
+                # Naming those stages is the difference between an attribution
+                # and a decimal place presented as a finding.
+                "stages_at_the_instrument_floor": sorted(
+                    name for name, cost in stages.items() if cost < 3 * timer_pair
+                ),
+                "attributed_ms": round(attributed, 4),
+                # Guard dispatch, one Check record per stage, and building the
+                # Decision. Published rather than folded into a stage: it is
+                # real cost, and it also absorbs the measurement error, so a
+                # small negative value here means the attribution has reached
+                # the resolution of the clock rather than that the broker is
+                # free.
+                "unattributed_ms": round(total_ms - attributed, 4),
+            }
+
+    return {
+        "iterations": iterations,
+        "scenarios": scenarios,
+        "timer_pair_ms": round(timer_pair, 5),
+        "attribution_note": (
+            "Every guard figure includes one perf_counter pair "
+            f"({round(timer_pair, 5)} ms on this machine), so each is an upper "
+            "bound. All four call shapes are authorised end to end, so every "
+            "stage runs; a refused call is cheaper because the pipeline "
+            "short-circuits at the guard that refused."
         ),
+        "measures": _MEASURES,
     }
 
 
@@ -372,6 +681,7 @@ def run(iterations: int) -> dict[str, Any]:
         "injection_corpus": measure_injection_corpus(),
         "false_refusals": measure_false_refusals(),
         "overhead": measure_overhead(iterations),
+        "overhead_by_stage": measure_overhead_by_stage(iterations),
         "cap_behaviour": measure_cap_behaviour(),
     }
 
@@ -410,11 +720,34 @@ def _report(results: Mapping[str, Any]) -> str:
 
     overhead = results["overhead"]
     add(f"Broker overhead per call, {overhead['iterations']} iterations:")
+    add(f"  call shape: {overhead['call_shape']}")
     add(
         f"  mean {overhead['mean_ms']} ms   median {overhead['median_ms']} ms   "
         f"p95 {overhead['p95_ms']} ms   p99 {overhead['p99_ms']} ms"
     )
+    add(
+        f"  per-repeat means over {overhead['repeats']} repeats: "
+        f"{overhead['repeat_means_ms']}, spread {overhead['repeat_mean_spread_ms']} ms"
+    )
     add(f"  {overhead['measures']}")
+    add("")
+
+    stages = results["overhead_by_stage"]
+    add(f"Where the overhead goes, {stages['iterations']} iterations per call shape:")
+    for label, scenario in stages["scenarios"].items():
+        add(f"  {label}: total {scenario['total_ms']} ms")
+        for stage, cost in scenario["stages_ms"].items():
+            add(f"    {stage:<20} {cost:.5f} ms")
+        add(
+            f"    {'unattributed':<20} {scenario['unattributed_ms']:.5f} ms "
+            f"(dispatch, check records, decision)"
+        )
+        if scenario["stages_at_the_instrument_floor"]:
+            add(
+                "    at the instrument floor: "
+                + ", ".join(scenario["stages_at_the_instrument_floor"])
+            )
+    add(f"  {stages['attribution_note']}")
     add("")
 
     add("Cap behaviour:")

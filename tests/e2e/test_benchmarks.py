@@ -87,6 +87,19 @@ class TestNumbersCarryTheirConditions:
         measures = _load().run(iterations=20)["overhead"]["measures"]
         assert "Excludes ingest" in measures
 
+    def test_the_headline_overhead_samples_only_authorised_calls(self) -> None:
+        """The loop this replaced ran 2200 calls against a 1000-call cap, so
+        1200 of its 2000 samples were budget-exhausted refusals -- a cheaper
+        path, published as the per-call cost of authorisation."""
+        overhead = _load().run(iterations=20)["overhead"]
+        assert overhead["all_samples_authorised"] is True
+
+    def test_the_headline_overhead_publishes_its_own_run_to_run_spread(self) -> None:
+        """One mean on a laptop reads as more precise than it is."""
+        overhead = _load().run(iterations=20)["overhead"]
+        assert len(overhead["repeat_means_ms"]) == overhead["repeats"] >= 2
+        assert overhead["repeat_mean_spread_ms"] >= 0
+
 
 class TestUnflatteringResultsAreNotHidden:
     def test_payloads_blocked_for_the_wrong_reason_are_reported(self) -> None:
@@ -158,3 +171,52 @@ class TestTheGeneratedCorpusIsReproducible:
         raw = generator.CORPUS_FILE.read_text(encoding="utf-8")
         assert "/var/folders" not in raw
         assert "/tmp/" not in raw
+
+
+class TestTheOverheadIsAttributedPerGuard:
+    """N-38. One aggregate cannot tell an adopter which control costs what."""
+
+    @staticmethod
+    def _stages() -> Any:
+        return _load().run(iterations=20)["overhead_by_stage"]
+
+    def test_every_pipeline_stage_is_named_in_every_call_shape(self) -> None:
+        expected = {
+            "scope_resolution",
+            "schema_validation",
+            "path_confinement",
+            "egress_allowlist",
+            "budget",
+            "approval",
+        }
+        scenarios = self._stages()["scenarios"]
+        assert len(scenarios) >= 3
+        for scenario in scenarios.values():
+            assert set(scenario["stages_ms"]) == expected
+
+    def test_the_call_shapes_cover_a_path_a_url_and_neither(self) -> None:
+        """Which control does real work depends on the arguments, so one call
+        shape would attribute the cost of one deployment, not of the broker."""
+        labels = " ".join(self._stages()["scenarios"])
+        assert "fs.read" in labels
+        assert "http.get" in labels
+        assert "tickets.get" in labels
+
+    def test_what_is_not_attributed_to_a_stage_is_published_not_absorbed(self) -> None:
+        for scenario in self._stages()["scenarios"].values():
+            attributed = sum(scenario["stages_ms"].values())
+            assert scenario["attributed_ms"] == pytest.approx(attributed, abs=1e-4)
+            assert scenario["unattributed_ms"] == pytest.approx(
+                scenario["total_ms"] - attributed, abs=1e-4
+            )
+
+    def test_the_instrument_states_its_own_cost(self) -> None:
+        """An attribution whose instrument's cost is unstated is not one."""
+        stages = self._stages()
+        assert stages["timer_pair_ms"] > 0
+        assert "perf_counter" in stages["attribution_note"]
+        for scenario in stages["scenarios"].values():
+            assert "stages_at_the_instrument_floor" in scenario
+
+    def test_the_breakdown_states_what_it_excludes(self) -> None:
+        assert "Excludes ingest" in self._stages()["measures"]
