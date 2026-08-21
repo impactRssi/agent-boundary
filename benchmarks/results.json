@@ -1,5 +1,5 @@
 {
-  "conditions": "Python 3.13.13 on Darwin/arm64, offline, synthetic corpora, single process, no warm cache",
+  "conditions": "Python 3.13.13 on Darwin/arm64, offline, synthetic corpora, single process, no warm cache, load average 9.02 over 12 logical CPUs while the timing figures were taken",
   "injection_corpus": {
     "attempted": 36,
     "blocked": 36,
@@ -215,11 +215,94 @@
   },
   "overhead": {
     "iterations": 2000,
-    "mean_ms": 0.1463,
-    "median_ms": 0.1269,
-    "p95_ms": 0.2922,
-    "p99_ms": 0.4287,
-    "max_ms": 0.7832,
+    "repeats": 5,
+    "call_shape": "fs.read -- one path argument, no egress",
+    "mean_ms": 0.1309,
+    "median_ms": 0.1271,
+    "p95_ms": 0.1363,
+    "p99_ms": 0.2131,
+    "max_ms": 4.6859,
+    "repeat_means_ms": [
+      0.1255,
+      0.1309,
+      0.1287,
+      0.1391,
+      0.1304
+    ],
+    "repeat_mean_spread_ms": 0.0136,
+    "all_samples_authorised": true,
+    "measures": "authorisation only: scope resolution, schema validation, path confinement, egress check, budget accounting, approval lookup. Excludes ingest and the handler's own work."
+  },
+  "overhead_by_stage": {
+    "iterations": 2000,
+    "scenarios": {
+      "fs.read -- one path argument, no egress": {
+        "total_ms": 0.1273,
+        "stages_ms": {
+          "scope_resolution": 0.00013,
+          "schema_validation": 0.00317,
+          "path_confinement": 0.10154,
+          "egress_allowlist": 0.00103,
+          "budget": 0.00552,
+          "approval": 0.00147
+        },
+        "stages_at_the_instrument_floor": [
+          "scope_resolution"
+        ],
+        "attributed_ms": 0.1129,
+        "unattributed_ms": 0.0145
+      },
+      "fs.write -- one path argument, irreversible and approved": {
+        "total_ms": 0.1519,
+        "stages_ms": {
+          "scope_resolution": 0.00013,
+          "schema_validation": 0.00421,
+          "path_confinement": 0.11369,
+          "egress_allowlist": 0.00114,
+          "budget": 0.00594,
+          "approval": 0.0072
+        },
+        "stages_at_the_instrument_floor": [
+          "scope_resolution"
+        ],
+        "attributed_ms": 0.1323,
+        "unattributed_ms": 0.0196
+      },
+      "http.get -- one url argument, no path": {
+        "total_ms": 0.0271,
+        "stages_ms": {
+          "scope_resolution": 0.00013,
+          "schema_validation": 0.00329,
+          "path_confinement": 0.00085,
+          "egress_allowlist": 0.00455,
+          "budget": 0.00434,
+          "approval": 0.00112
+        },
+        "stages_at_the_instrument_floor": [
+          "scope_resolution"
+        ],
+        "attributed_ms": 0.0143,
+        "unattributed_ms": 0.0129
+      },
+      "tickets.get -- neither a path nor a url": {
+        "total_ms": 0.0227,
+        "stages_ms": {
+          "scope_resolution": 0.00013,
+          "schema_validation": 0.00324,
+          "path_confinement": 0.0009,
+          "egress_allowlist": 0.00081,
+          "budget": 0.00453,
+          "approval": 0.00114
+        },
+        "stages_at_the_instrument_floor": [
+          "scope_resolution"
+        ],
+        "attributed_ms": 0.0107,
+        "unattributed_ms": 0.012
+      }
+    },
+    "timer_pair_ms": 9e-05,
+    "attribution_note": "Every guard figure includes one perf_counter pair (9e-05 ms on this machine), so each is an upper bound. All four call shapes are authorised end to end, so every stage runs; a refused call is cheaper because the pipeline short-circuits at the guard that refused.",
     "measures": "authorisation only: scope resolution, schema validation, path confinement, egress check, budget accounting, approval lookup. Excludes ingest and the handler's own work."
   },
   "cap_behaviour": {
