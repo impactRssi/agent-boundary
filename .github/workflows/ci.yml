@@ -60,7 +60,10 @@ jobs:
           version: ${{ env.UV_VERSION }}
           enable-cache: true
       - run: uv python install ${{ env.PYTHON_VERSION }}
-      - run: uv sync --group dev --frozen
+      # mypy type-checks the MCP adapter and the GUI tier, so both have to be
+      # present. `--group dev` alone fails here with six import errors, which is
+      # the same failure a contributor hits on a clean clone.
+      - run: uv sync --group dev --group gui --extra mcp --frozen
       - name: Format check
         run: uv run ruff format --check .
       - name: Lint
@@ -261,6 +264,13 @@ jobs:
     # nothing -- an empty map, not an inherited `contents: read`.
     permissions: {}
     steps:
+      # harden-runner runs here too, under `permissions: {}`. Its token input
+      # defaults to github.token, which has no scopes under an empty map; its
+      # own documentation describes the token as rate-limit avoidance only, so
+      # this should hold -- but it is unverified until CI has actually run, and
+      # it lands on the one job that must stay green. Recorded in the threat
+      # model rather than exempted here: an exemption is how a uniform rule
+      # stops being uniform.
       - uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
         with:
           egress-policy: audit

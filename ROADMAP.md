@@ -368,7 +368,7 @@ and it is the first thing a peer reviewer looks at.
 - **Tests** U — a check that fails the build when an unpinned `uses:` appears.
   Enforced by a check, not a convention: the convention is what erodes.
 - **GUI** n/a — no interface.
-- [ ] Merged
+- [x] Merged
 
 #### N-28 — Deny the pipeline what it does not need
 - **Depends on** N-27 · **Invariant** none
@@ -376,7 +376,7 @@ and it is the first thing a peer reviewer looks at.
   left in `.git/config` for a later third-party step to read. Egress audit on
   every job. `dependency-review` on pull requests.
 - **Tests** U (workflow lint) · **GUI** n/a.
-- [ ] Merged
+- [x] Merged
 
 #### N-29 — Automate what would otherwise drift
 - **Depends on** N-27 · **Invariant** none
@@ -384,7 +384,7 @@ and it is the first thing a peer reviewer looks at.
   pin is updated by a reviewed pull request rather than going stale. Pinning
   without automation trades one failure mode for another.
 - **Tests** n/a — configuration node, no executable behaviour.
-- [ ] Merged
+- [x] Merged
 
 ### C2 — Test-tier honesty · owner: test engineer
 

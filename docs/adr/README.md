@@ -17,3 +17,4 @@ expect to have been argued.
 | [0004](ADR-0004-human-approval-for-irreversible-effects.md) | Out-of-band human approval for irreversible effects | Accepted |
 | [0005](ADR-0005-python-and-mcp-as-reference-runtime.md) | Python and MCP as the reference runtime | Accepted |
 | [0006](ADR-0006-adversarial-suite-is-a-separate-blocking-job.md) | The adversarial suite is a separate, guarded, blocking job | Accepted |
+| [0007](ADR-0007-pipeline-pinning-is-checked-not-prevented.md) | Action pinning is checked, not made impossible | Accepted |
