@@ -198,12 +198,19 @@ adversarial subset.
 | 4.8 Isolation | ✔ | ✔ | — | — |
 | 4.9 Packaging | — | — | ✔ | — |
 
-**TR-001** The adversarial suite MUST fail the build if it collects zero tests
-or skips one.
+**TR-001** The adversarial, end-to-end, and GUI suites MUST each fail the build
+if they run zero tests or skip one. The count MUST be taken after selection,
+not after discovery: a selection expression that deselects every payload leaves
+a suite that discovered a corpus and asserted nothing, and a guard counting
+discovery reports that as success.
 **TR-002** Every row of the threat model's attack table (A1–A9) MUST have at
 least one executable payload asserting refusal.
 **TR-003** The injection corpus MUST contain at least 30 payloads across at
 least 7 carrier types.
+
+**TR-004** The reference MCP transport MUST be exercised by a test that runs it
+as a separate process and drives it with a real client. A transport asserted
+only through the in-process type it wraps is a transport nobody has run.
 
 ---
 

@@ -400,7 +400,7 @@ without their optional dependencies.
   claim is corrected. Preference is strongly the former: the transport is where
   a second, weaker authorisation path would appear.
 - **Tests** E · **GUI** n/a.
-- [ ] Merged
+- [x] Merged
 
 #### N-31 — Extend the zero-collect guard to the E2E and GUI tiers
 - **Depends on** N-30 · **Invariant** verifiability of I1–I4
@@ -408,7 +408,7 @@ without their optional dependencies.
   GUI tiers still can. `make test-e2e` reports success on a tier whose
   dependencies are absent. Same guard, same failure mode, same fix.
 - **Tests** U (the guard) · E · G.
-- [ ] Merged
+- [x] Merged
 
 ### C3 — Visible evidence · owner: documentation owner
 

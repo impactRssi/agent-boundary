@@ -1,6 +1,6 @@
 # ADR-0006 — The adversarial suite is a separate, guarded, blocking job
 
-- **Status:** Accepted
+- **Status:** Accepted; extended by the amendment below (2026-08-21)
 - **Date:** 2026-08-20
 - **Upholds:** the verifiability of I1–I4
 
@@ -61,3 +61,37 @@ decorator can be forgotten; a directory cannot.
 - `MINIMUM_PAYLOADS` is 1 until node N-17 lands, then rises to the corpus floor
   of 30 (SPEC.md TR-003). Stated here so the current low value reads as a
   scheduled step rather than a weak control.
+
+
+---
+
+## Amendment — 2026-08-21
+
+Two things this record got wrong, both found by extending the guard to the
+other tiers rather than by reviewing it.
+
+**The count was taken at the wrong moment.** The guard counted inside
+`pytest_collection_modifyitems`, which a conftest implements *before* pytest
+applies `-k`, `-m` and `--deselect`. It therefore counted what was
+**discovered**, not what would **run**. `pytest tests/adversarial
+--adversarial-guard -k TestCorpusCoverage` deselected all 125 payloads, ran
+four meta-tests, and exited 0 with the guard armed — the exact failure this ADR
+exists to prevent, reachable from the command line. Counting moved to
+`pytest_collection_finish`. Markers stay in `modifyitems`, so `security` is
+still applied by location.
+
+**The scope was too narrow.** "A suite that can silently collect nothing is not
+a control" is not a property of adversarial payloads; it is a property of any
+tier whose absence would go unnoticed. The end-to-end tier had the same hole:
+in a `--group dev`-only environment it exited 0 having run nothing that touched
+the transport. The guard now covers the adversarial, end-to-end, and GUI tiers,
+each with its own flag and floor, declared as data so a tier cannot be added
+with a floor and no way to arm it.
+
+`AdversarialSuiteInvalid` is retained as an alias of `SuiteInvalid`, since this
+record names it and the symbol is exported. The rename exists because a
+traceback reading "adversarial suite invalid" during a GUI run is a lie at the
+moment someone is reading carefully.
+
+The decision itself stands: separate job, guard, and an external check that the
+guard still fails closed. Only its reach and the counting point changed.
