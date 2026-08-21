@@ -1,8 +1,8 @@
 # Roadmap
 
-**All 26 nodes merged. `v0.1.0` released.** The graph below is kept as the
-record of how the work was sequenced, and is where the next phase's nodes will
-be added.
+**Nodes N-01 to N-26 merged, `v0.1.0` released.** Phase 8 (N-27 to N-38) is
+open: it closes gaps found by auditing the shipped repository rather than by
+adding features.
 
 Work is a directed acyclic graph of nodes, not a list. Phases below are a
 readable projection of the graph; the graph is what governs sequencing. See
@@ -56,6 +56,24 @@ graph TD
     N22 --> N25
     N20 --> N26[N-26 release v0.1.0]
     N25 --> N26
+```
+
+### Phase 8 dependency graph
+
+```mermaid
+graph TD
+    N27[N-27 pin actions by digest] --> N28[N-28 deny what CI does not need]
+    N27 --> N29[N-29 dependabot]
+    N27 --> N34[N-34 badges]
+    N26v[N-26 v0.1.0] --> N30[N-30 real MCP transport in E2E]
+    N30 --> N31[N-31 zero-collect guard on e2e + gui]
+    N32[N-32 trust-boundary diagram] --> N33[N-33 viewer capture]
+    N27 --> N35[N-35 publish the repository]
+    N30 --> N35
+    N34 --> N35
+    N35 --> N36[N-36 publish to PyPI]
+    N26v --> N37[N-37 third-party benign corpus]
+    N26v --> N38[N-38 per-guard overhead]
 ```
 
 ---
@@ -319,6 +337,146 @@ under, and the limitations are specific.
   the tag being releasable.
 - [x] Merged
 
+
+---
+
+## Phase 8 — Close the gaps the audit found
+
+Everything below came from auditing `v0.1.0` as an outsider would: cloning it
+clean, running what the documentation said, and checking whether the claims the
+repository makes about itself are true. Three were not.
+
+Nodes are grouped into five categories. Each category has one owner and one
+branch series; categories C1 and C2 both touch CI configuration and are
+sequenced, the rest are independent.
+
+Exit criterion for the phase: no claim in the repository is unsupported by
+something a reader can check, and the pipeline meets the standard the project
+argues for.
+
+### C1 — Pipeline hardening · owner: security engineer
+
+The project argues "structural over procedural" and does not apply it to its
+own pipeline. A DevSecOps project whose CI is not hardened contradicts itself,
+and it is the first thing a peer reviewer looks at.
+
+#### N-27 — Pin every action to an immutable digest
+- **Depends on** — · **Invariant** none (supply chain, not I1–I4)
+- **Exit** Every `uses:` in `.github/workflows/` resolves to a commit SHA, not
+  a tag. `actions/checkout@v5` is a moving reference: a repointed tag or a
+  compromised maintainer gets the job's `GITHUB_TOKEN`.
+- **Tests** U — a check that fails the build when an unpinned `uses:` appears.
+  Enforced by a check, not a convention: the convention is what erodes.
+- **GUI** n/a — no interface.
+- [ ] Merged
+
+#### N-28 — Deny the pipeline what it does not need
+- **Depends on** N-27 · **Invariant** none
+- **Exit** `persist-credentials: false` on every checkout, so the token is not
+  left in `.git/config` for a later third-party step to read. Egress audit on
+  every job. `dependency-review` on pull requests.
+- **Tests** U (workflow lint) · **GUI** n/a.
+- [ ] Merged
+
+#### N-29 — Automate what would otherwise drift
+- **Depends on** N-27 · **Invariant** none
+- **Exit** Dependabot for actions and Python dependencies, grouped, so a digest
+  pin is updated by a reviewed pull request rather than going stale. Pinning
+  without automation trades one failure mode for another.
+- **Tests** n/a — configuration node, no executable behaviour.
+- [ ] Merged
+
+### C2 — Test-tier honesty · owner: test engineer
+
+Two claims in the test tree are not true. Both were found by running the tiers
+without their optional dependencies.
+
+#### N-30 — Make the E2E tier cross a real transport, or stop saying it does
+- **Depends on** N-26 · **Invariant** I1–I4 across the transport
+- **Exit** `src/agentboundary/mcp/stdio.py` is at **0% coverage** and no test
+  imports it, while `tests/e2e/README.md` claims the tier "drives a real agent
+  runtime against a real broker process over the wire". Nothing crosses a wire.
+  Either the tier exercises the stdio adapter through a real MCP client, or the
+  claim is corrected. Preference is strongly the former: the transport is where
+  a second, weaker authorisation path would appear.
+- **Tests** E · **GUI** n/a.
+- [ ] Merged
+
+#### N-31 — Extend the zero-collect guard to the E2E and GUI tiers
+- **Depends on** N-30 · **Invariant** verifiability of I1–I4
+- **Exit** The adversarial tier cannot pass by collecting nothing; the E2E and
+  GUI tiers still can. `make test-e2e` reports success on a tier whose
+  dependencies are absent. Same guard, same failure mode, same fix.
+- **Tests** U (the guard) · E · G.
+- [ ] Merged
+
+### C3 — Visible evidence · owner: documentation owner
+
+The strongest arguments this project has are invisible to someone who has not
+cloned it. A reader scans for thirty seconds.
+
+#### N-32 — A diagram that survives a screenshot
+- **Depends on** — · **Invariant** none
+- **Exit** The trust-boundary diagram as a rendered image, showing the agent
+  *inside* the untrusted region. That placement is the thesis and it is
+  currently ASCII art in a code block.
+- **Tests** n/a — documentation node.
+- [ ] Merged
+
+#### N-33 — Show the audit viewer
+- **Depends on** N-32 · **Invariant** none
+- **Exit** A capture of the viewer with refusals rendered as refused and their
+  reasons visible. One image that demonstrates I3 without a clone.
+- **Tests** n/a — documentation node.
+- [ ] Merged
+
+#### N-34 — Status at a glance
+- **Depends on** N-27 · **Invariant** none
+- **Exit** CI, licence, and Python-version badges. The gate is the argument;
+  a reader should see it is green without opening a tab.
+- **Tests** n/a — documentation node.
+- [ ] Merged
+
+### C4 — Distribution · owner: technical lead
+
+None of the above is visible while the repository exists only on one laptop.
+
+#### N-35 — Publish the repository
+- **Depends on** N-27, N-30, N-34 · **Invariant** none
+- **Exit** Public on GitHub with a description and topics, branch protection
+  requiring the `gate` check, and the `v0.1.0` tag pushed. Deliberately depends
+  on C1 and C2: publishing a repository whose CI is unhardened and whose test
+  claims are overstated invites exactly the review it would fail.
+- **Tests** n/a — release node.
+- [ ] Merged
+
+#### N-36 — Publish the package
+- **Depends on** N-35 · **Invariant** none
+- **Exit** On PyPI via trusted publishing, so `pip install agent-boundary`
+  works and `docs/INSTALL.md` loses its "not on PyPI yet" note. Trusted
+  publishing rather than an API token: there is no credential to leak.
+- **Tests** E — install from PyPI in a clean environment.
+- [ ] Merged
+
+### C5 — Measurement credibility · owner: benchmark engineer
+
+#### N-37 — A false-refusal rate someone else can trust
+- **Depends on** N-26 · **Invariant** none
+- **Exit** The published 0/25 is measured against a corpus the controls' author
+  wrote, and the README says so. A benign corpus generated from a different
+  source — recorded agent traffic, or written by someone who has not read the
+  guards — turns the weakest published number into a measurement.
+- **Tests** E · **GUI** n/a.
+- [ ] Merged
+
+#### N-38 — Attribute the overhead per guard
+- **Depends on** N-26 · **Invariant** none
+- **Exit** 0.15 ms mean is published as one figure. Broken down per guard, it
+  tells an adopter which control costs what, and tells us where a regression
+  landed.
+- **Tests** E · **GUI** n/a.
+- [ ] Merged
+
 ---
 
 ## Deferred, with reasons
@@ -330,4 +488,4 @@ Recorded so that absence is a decision rather than an oversight.
 | Concurrent tasks sharing a budget pool | Adds cross-task state to the decision path; v0.1.0 keeps the broker per-task and stateless across tasks. Listed as a limitation |
 | Detecting unsafe composition of two in-scope tools | Unsolved. Bounded by attribution and approval, not prevented (threat model §7.2) |
 | A model-based classifier as a noise reducer | Permitted *alongside* the broker, never on the authorisation path (ADR-0001). The false-refusal rate is now measured at 0/25 on a synthetic corpus, so there is no measured noise to reduce — revisit when a rate from real traffic exists |
-| Third-party security review | Wanted. Scheduled after v0.1.0; its absence is stated in the README |
+| Third-party security review | Wanted. Its absence is stated in the README, SECURITY.md and the changelog, and stays stated until it is not true |
