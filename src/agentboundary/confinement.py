@@ -182,6 +182,11 @@ class EgressGuard:
 
     An empty allowlist denies all egress. That is the correct default: a task
     that needs the network says so.
+
+    Matching is exact on a normalised key -- lowercased, DNS root label removed
+    on both sides -- never a suffix or a pattern. A suffix rule turns one
+    allowlisted host into every host beneath it, including the one an attacker
+    registers.
     """
 
     __slots__ = ("_argument_names",)
@@ -224,13 +229,33 @@ class EgressGuard:
             )
 
         host = (parts.hostname or "").lower()
-        if not host:
+        if not host or not host.strip("."):
+            # A host of "." names the DNS root, not a destination. Refused with
+            # the same detail as an absent host because it is the same defect.
             return GuardResult.refuse(
                 RefusalReason.EGRESS_HOST_NOT_ALLOWED,
                 f"argument {argument!r}: URL declares no host",
             )
 
-        if host not in {entry.lower() for entry in allowlist}:
+        candidate = _without_root_label(host)
+
+        # An address literal is not a DNS name, so the root label means nothing
+        # on it -- and clients disagree about what the string denotes. A WHATWG
+        # URL parser drops the dot and connects to the literal; getaddrinfo
+        # treats "10.1.2.3." as a name and asks a resolver, whose answer is not
+        # ours to predict. A destination whose identity depends on the client's
+        # parser cannot be authorised, so it is refused. The allowlist side is
+        # normalised anyway (see _without_root_label): an operator entry of
+        # "127.0.0.1." must still reach the loopback rule below rather than
+        # sailing past a check that only recognises the undotted spelling.
+        if _as_ip(candidate) is not None and candidate != host:
+            return GuardResult.refuse(
+                RefusalReason.EGRESS_HOST_NOT_ALLOWED,
+                f"argument {argument!r}: {host!r} is an address literal carrying a trailing "
+                f"root label, which different clients resolve to different destinations",
+            )
+
+        if candidate not in {_without_root_label(entry.lower()) for entry in allowlist}:
             return GuardResult.refuse(
                 RefusalReason.EGRESS_HOST_NOT_ALLOWED,
                 f"argument {argument!r}: host {host!r} is not allowlisted "
@@ -241,7 +266,7 @@ class EgressGuard:
         # address is the DNS-rebinding shape. Literal addresses are all we can
         # judge deterministically here; name resolution belongs to the caller
         # making the request, and this limitation is stated in the threat model.
-        literal = _as_ip(host)
+        literal = _as_ip(candidate)
         if literal is not None and (literal.is_loopback or literal.is_link_local):
             return GuardResult.refuse(
                 RefusalReason.EGRESS_HOST_NOT_ALLOWED,
@@ -259,6 +284,36 @@ def _string_arguments(arguments: Mapping[str, Any], names: frozenset[str]) -> di
     return {
         name: value for name, value in arguments.items() if name in names and isinstance(value, str)
     }
+
+
+def _without_root_label(host: str) -> str:
+    """The comparison key for a host: the same name without its DNS root label.
+
+    ``docs.internal.`` and ``docs.internal`` are one host. The trailing dot is
+    the root label of a fully qualified name, and a client that emits the
+    qualified spelling -- a resolver library, a copied `dig` output, an SDK
+    that qualifies to defeat search-domain suffixing -- reaches the same place.
+    Refusing it is a refusal with a cost and no security gain.
+
+    Applied to **both** sides of the comparison, and to nothing else. Only the
+    URL host would widen the allowlist by one spelling the operator never
+    wrote; only the allowlist entries would leave the qualified URL refused.
+
+    Exactly one dot is removed, and only when a label precedes it:
+
+    - ``docs.internal.`` -> ``docs.internal`` -- the root label, removed.
+    - ``docs.internal..`` -> unchanged. The second dot delimits an empty label,
+      which is not a name at all; collapsing it would let the malformed
+      spelling inherit the allowlisted name's authorisation.
+    - ``.`` -> unchanged, and rejected earlier as a host that names only the
+      root.
+
+    Nothing else moves: matching stays exact, so ``docs.internal.evil.example``
+    and ``evil.docs.internal`` remain as unallowlisted after this as before.
+    """
+    if len(host) > 1 and host.endswith(".") and not host.endswith(".."):
+        return host[:-1]
+    return host
 
 
 def _as_ip(host: str) -> ipaddress.IPv4Address | ipaddress.IPv6Address | None:

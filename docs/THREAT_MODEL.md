@@ -254,6 +254,17 @@ is marketing.
 12. **`dependency-review` is visible but not blocking** until branch protection
     lists it as a required check, which is a repository setting no file in this
     tree can assert.
+13. **Host equality is one defined normalisation, not a resolver.** The egress
+    guard lowercases and removes the DNS root label on both sides, then
+    compares exactly. Every other way of spelling the same host — an IDN
+    against its punycode form, an alternate notation for an address — does not
+    match, and is refused. That direction is the safe one, but it is a false
+    refusal, and the operator's lever is to write the allowlist in the same
+    spelling the client will emit. In the other direction, an address literal
+    carrying a root label (`10.1.2.3.`) is refused outright rather than
+    normalised: a WHATWG URL parser drops the dot and connects to the literal
+    while `getaddrinfo` asks a resolver for that name, so one string names two
+    destinations and the guard will authorise neither.
 
 ---
 
