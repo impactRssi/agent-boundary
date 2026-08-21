@@ -11,11 +11,13 @@ agent and the tools it can reach. It decides which proposed calls become
 effects — without consulting a model, and without reading a single token of the
 agent's context.
 
-> **Status: `v0.1.0`.** The broker, the ingest path, the MCP server, the
-> indirect-injection corpus, the audit-trace viewer, and the benchmark harness
-> are implemented and blocking in CI. The numbers in
-> [Measured results](#6-measured-results) come from a run you can reproduce
-> with one command; read the caveat attached to each one.
+> **Status: `v0.2.0`.** The broker, ingest, MCP transport, injection corpus,
+> audit viewer, and benchmark harness are implemented and blocking in CI.
+> `v0.1.0` is superseded and should not be used: it shipped a broken MCP
+> transport, an egress bypass, and a defeatable test guard — all three are in
+> the [changelog](CHANGELOG.md), found by the work in this release rather than
+> by review. The numbers below come from a run you can reproduce with one
+> command; read the caveat attached to each.
 
 ---
 

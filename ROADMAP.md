@@ -1,8 +1,10 @@
 # Roadmap
 
-**Nodes N-01 to N-26 merged, `v0.1.0` released.** Phase 8 (N-27 to N-38) is
-open: it closes gaps found by auditing the shipped repository rather than by
-adding features.
+**All nodes merged through N-40. `v0.2.0` released.** Phase 8 closed gaps found
+by auditing `v0.1.0` as an outsider would — cloning it clean, running what the
+documentation said, and checking whether the repository's claims about itself
+held. Three did not, and two of those were security defects. Both are in the
+[changelog](CHANGELOG.md).
 
 Work is a directed acyclic graph of nodes, not a list. Phases below are a
 readable projection of the graph; the graph is what governs sequencing. See
