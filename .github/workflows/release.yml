@@ -75,10 +75,22 @@ jobs:
       # The wheel's component list is empty because the core package has zero
       # runtime dependencies. That is the claim, not a broken scan -- the
       # second SBOM covers what an install of the [mcp] extra actually pulls.
+      # The tag is `v0.2.1`; the wheel is `agent_boundary-0.2.1-...`. Deriving
+      # the filename from `github.ref_name` put the `v` back in and the SBOM
+      # step failed on a path that never existed. Resolve the real artefact
+      # instead of reconstructing its name.
+      - name: Locate the built wheel
+        id: wheel
+        run: |
+          set -euo pipefail
+          path="$(ls dist/*.whl)"
+          test -f "${path}"
+          echo "path=${path}" >> "${GITHUB_OUTPUT}"
+
       - name: SBOM (wheel)
         uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
         with:
-          file: dist/agent_boundary-${{ github.ref_name }}-py3-none-any.whl
+          file: ${{ steps.wheel.outputs.path }}
           format: cyclonedx-json
           output-file: sbom.wheel.cdx.json
 
