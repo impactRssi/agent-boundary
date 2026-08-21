@@ -136,7 +136,10 @@ strict = true
 warn_unreachable = true
 warn_return_any = true
 disallow_any_explicit = false
-files = ["src", "tests"]
+# scripts/ is in the type gate too: capture_viewer.py drives the real
+# broker and the real viewer, so a break there is a break in the
+# evidence the README shows, not merely in a helper.
+files = ["src", "tests", "scripts"]
 # Each test tier has its own conftest. Without explicit package bases they all
 # resolve to the module name "conftest" and mypy refuses to check any of them.
 explicit_package_bases = true

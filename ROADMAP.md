@@ -421,21 +421,21 @@ cloned it. A reader scans for thirty seconds.
   *inside* the untrusted region. That placement is the thesis and it is
   currently ASCII art in a code block.
 - **Tests** n/a — documentation node.
-- [ ] Merged
+- [x] Merged
 
 #### N-33 — Show the audit viewer
 - **Depends on** N-32 · **Invariant** none
 - **Exit** A capture of the viewer with refusals rendered as refused and their
   reasons visible. One image that demonstrates I3 without a clone.
 - **Tests** n/a — documentation node.
-- [ ] Merged
+- [x] Merged
 
 #### N-34 — Status at a glance
 - **Depends on** N-27 · **Invariant** none
 - **Exit** CI, licence, and Python-version badges. The gate is the argument;
   a reader should see it is green without opening a tab.
 - **Tests** n/a — documentation node.
-- [ ] Merged
+- [x] Merged
 
 ### C4 — Distribution · owner: technical lead
 
