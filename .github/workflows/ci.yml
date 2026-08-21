@@ -9,6 +9,17 @@
 # repository's GITHUB_TOKEN. The trailing comment records which tag the digest
 # was resolved from, so a reviewer can check the pin without leaving the diff.
 # `scripts/check_action_pins.py` fails this workflow if a tag reappears.
+#
+# Every job starts with an egress audit and declares its own `permissions:`,
+# and every checkout runs with `persist-credentials: false` so the token is not
+# written into .git/config where a later third-party step could read it.
+# The egress policy is `audit`, not `block`: the legitimate destination set of
+# this pipeline has not been measured, and a blocking policy written from
+# guesswork fails closed on the wrong thing. Audit produces the evidence a
+# blocking policy would need. It is a record, not a control -- do not read a
+# clean audit as a bound on what a job can reach.
+# `scripts/check_workflow_hardening.py` fails this workflow if any of the three
+# is dropped from a job.
 
 name: ci
 
@@ -35,8 +46,15 @@ jobs:
   static:
     name: format, lint, types
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
+      - uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
+        with:
+          egress-policy: audit
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
       - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
         with:
           version: ${{ env.UV_VERSION }}
@@ -57,8 +75,15 @@ jobs:
       fail-fast: false
       matrix:
         python-version: ["3.11", "3.12", "3.13"]
+    permissions:
+      contents: read
     steps:
+      - uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
+        with:
+          egress-policy: audit
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
       - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
         with:
           version: ${{ env.UV_VERSION }}
@@ -76,8 +101,15 @@ jobs:
   adversarial:
     name: adversarial corpus (blocking)
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
+      - uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
+        with:
+          egress-policy: audit
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
       - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
         with:
           version: ${{ env.UV_VERSION }}
@@ -109,8 +141,15 @@ jobs:
   e2e:
     name: end-to-end
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
+      - uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
+        with:
+          egress-policy: audit
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
       - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
         with:
           version: ${{ env.UV_VERSION }}
@@ -127,8 +166,18 @@ jobs:
   gui:
     name: gui (real browser)
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
+      # `disable-sudo` is deliberately not set here: this job installs browser
+      # system dependencies with apt. Turning it on would fail the job, not
+      # harden it.
+      - uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
+        with:
+          egress-policy: audit
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
       - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
         with:
           version: ${{ env.UV_VERSION }}
@@ -143,13 +192,23 @@ jobs:
         run: uv run pytest tests/gui -v
 
   security:
-    name: sast, dependency audit, secrets, action pins
+    name: sast, dependency audit, secrets, pipeline hardening
     runs-on: ubuntu-latest
+    # gitleaks-action can post a pull-request comment when given
+    # `pull-requests: write`. It is not given it: the job failing is the signal,
+    # and a scanner that can write to the repository is a scanner worth
+    # compromising.
+    permissions:
+      contents: read
     steps:
+      - uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
+        with:
+          egress-policy: audit
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           # gitleaks needs history in order to scan it.
           fetch-depth: 0
+          persist-credentials: false
       - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
         with:
           version: ${{ env.UV_VERSION }}
@@ -188,12 +247,23 @@ jobs:
       - name: Actions are pinned to immutable digests
         run: uv run python scripts/check_action_pins.py
 
+      # Least privilege stated per job, an egress audit opening every job, and
+      # no checkout leaving the token behind in .git/config.
+      - name: Jobs take no privilege they do not need
+        run: uv run python scripts/check_workflow_hardening.py
+
   gate:
     name: gate
     runs-on: ubuntu-latest
     needs: [static, unit, adversarial, e2e, gui, security]
     if: always()
+    # This job reads no code and calls no API. It needs nothing, so it is given
+    # nothing -- an empty map, not an inherited `contents: read`.
+    permissions: {}
     steps:
+      - uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
+        with:
+          egress-policy: audit
       # A required check that passes when a needed job was skipped or cancelled
       # is a check that does not gate anything.
       - name: Fail unless every upstream job succeeded

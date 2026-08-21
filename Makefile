@@ -5,7 +5,8 @@
 
 .DEFAULT_GOAL := help
 .PHONY: help install format format-check lint types test-unit test-adversarial \
-        test-e2e test-gui coverage sast audit secrets actions-pinned check clean
+        test-e2e test-gui coverage sast audit secrets actions-pinned \
+        workflows-hardened check clean
 
 UV ?= uv
 RUN := $(UV) run
@@ -76,9 +77,15 @@ secrets: ## Secret scan over the full history
 actions-pinned: ## Fail if any workflow references an action by a movable tag
 	$(RUN) python scripts/check_action_pins.py
 
-check: format-check lint types test-unit test-adversarial test-e2e test-gui coverage sast audit secrets actions-pinned ## The full gate, in CI order
+# Every job declares its own permissions, opens with an egress audit, and
+# checks out without leaving the token in .git/config for a later third-party
+# step to read. Audit mode records egress; it does not bound it.
+workflows-hardened: ## Fail if a CI job takes a privilege it does not need
+	$(RUN) python scripts/check_workflow_hardening.py
+
+check: format-check lint types test-unit test-adversarial test-e2e test-gui coverage sast audit secrets actions-pinned workflows-hardened ## The full gate, in CI order
 	@echo
-	@echo "gate passed: format, lint, types, unit, adversarial, e2e, gui, coverage, sast, audit, secrets, action pins"
+	@echo "gate passed: format, lint, types, unit, adversarial, e2e, gui, coverage, sast, audit, secrets, action pins, workflow hardening"
 
 clean: ## Remove build and cache artifacts
 	rm -f .requirements.audit.txt

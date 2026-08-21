@@ -1,0 +1,54 @@
+# Refuse a pull request that introduces a known-vulnerable dependency.
+#
+# `pip-audit` in ci.yml audits the lockfile as it stands; this compares the
+# dependency graph of the pull request against the base branch, so the finding
+# names the change that introduced the vulnerability rather than the state that
+# happens to contain it. The two overlap and neither replaces the other.
+#
+# It lives in its own file rather than as a job in ci.yml because it is only
+# meaningful on `pull_request`. Inside ci.yml it would be `skipped` on every
+# push to main, and the `gate` job refuses to treat a skipped upstream job as a
+# success -- correctly. Splitting it keeps that rule intact.
+#
+# NOT YET GATING. `gate` is the required check; this one is not required until
+# branch protection lists it (N-35). Until then a failure here is visible on the
+# pull request but does not block a merge. It also depends on the repository
+# having the dependency graph enabled, which is a repository setting and not
+# something this file can assert.
+
+name: dependency-review
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dependency-review-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  dependency-review:
+    name: dependency review
+    runs-on: ubuntu-latest
+    # Read the diff, report through the job's own status. The action can post a
+    # summary comment when granted `pull-requests: write`; it is not granted,
+    # because a red check is the signal and write access to pull requests is
+    # not needed to produce one.
+    permissions:
+      contents: read
+    steps:
+      - uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - name: Dependency review
+        uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        with:
+          # `low` is the default and is stated anyway: the threshold is a
+          # policy decision and it should be readable in the diff that changes
+          # it, not inherited from whatever the action decides next release.
+          fail-on-severity: low
