@@ -1,0 +1,140 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="828" viewBox="0 0 960 828" role="img" aria-labelledby="title desc">
+<title id="title">Agent Boundary trust boundaries</title>
+<desc id="desc">Untrusted content, the ingest path and the agent all sit inside one untrusted region. Trust boundary 3, between the agent and the broker, is the load-bearing one: the deterministic, model-free broker is the only component that can turn a proposed call into an effect. Trust boundary 4 separates the broker from the effect and the append-only audit trace.</desc>
+
+<defs>
+  <style>
+    .bg     { fill: #f7f8fa; }
+    .frame  { fill: none; stroke: #cfd5de; stroke-width: 1; }
+    .h1     { font: 700 20px ui-sans-serif, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; fill: #16181d; }
+    .h2     { font: 400 13px ui-sans-serif, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; fill: #5c6370; }
+    .region-label { font: 700 12px ui-sans-serif, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; letter-spacing: .09em; }
+    .box    { fill: #ffffff; stroke: #b9c0cb; stroke-width: 1.5; }
+    .box-strong { fill: #ffffff; stroke: #1f6b3a; stroke-width: 3; }
+    .name   { font: 700 15px ui-sans-serif, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; fill: #16181d; }
+    .tag    { font: 600 12px ui-sans-serif, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; fill: #5c6370; }
+    .tag-danger { font: 700 12px ui-sans-serif, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; fill: #a3272b; letter-spacing: .04em; }
+    .tag-ok { font: 700 12px ui-sans-serif, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; fill: #1f6b3a; }
+    .sub    { font: 400 12.5px ui-sans-serif, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; fill: #4a505b; }
+    .mono   { font: 400 12.5px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fill: #4a505b; }
+    .edge   { font: 400 11.5px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fill: #5c6370; }
+    .bline  { stroke: #4b5563; stroke-width: 1.6; stroke-dasharray: 9 5; }
+    .bline3 { stroke: #1f6b3a; stroke-width: 4; }
+    .blabel { font: 700 12px ui-sans-serif, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; fill: #4b5563; letter-spacing: .07em; }
+    .blabel3 { font: 700 13.5px ui-sans-serif, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; fill: #1f6b3a; letter-spacing: .07em; }
+    .flow   { stroke: #4b5563; stroke-width: 1.8; fill: none; }
+    .chip   { fill: #eef1f5; stroke: #b9c0cb; stroke-width: 1; }
+    .chiptx { font: 700 11px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fill: #3a4049; }
+    .foot   { font: 400 11.5px ui-sans-serif, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; fill: #5c6370; }
+  </style>
+  <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+    <path d="M 0 0 L 10 5 L 0 10 z" fill="#4b5563"/>
+  </marker>
+</defs>
+
+<rect class="bg" x="0" y="0" width="960" height="828"/>
+<rect class="frame" x="0.5" y="0.5" width="959" height="827"/>
+
+<text class="h1" x="32" y="36">Trust boundaries</text>
+<text class="h2" x="32" y="58">The agent sits inside the untrusted region. Boundary 3 is the only place a proposed call becomes an effect.</text>
+
+<!-- ================= UNTRUSTED REGION ================= -->
+<rect x="28" y="76" width="904" height="396" rx="10" fill="#fbeeee" stroke="#a3272b" stroke-width="2" stroke-dasharray="10 6"/>
+<text class="region-label" x="44" y="102" fill="#a3272b">UNTRUSTED REGION</text>
+<text class="h2" x="196" y="102">attacker-influenced — nothing in here can authorise an effect</text>
+
+<!-- content -->
+<rect class="box" x="64" y="116" width="832" height="62" rx="7"/>
+<text class="name" x="84" y="141">UNTRUSTED CONTENT</text>
+<text class="sub" x="84" y="162">tickets · documents · web pages · tool responses · filenames · dependency metadata · error text</text>
+
+<path class="flow" d="M 480 178 L 480 197" marker-end="url(#arrow)"/>
+
+<!-- boundary 1 -->
+<line class="bline" x1="44" y1="206" x2="372" y2="206"/>
+<line class="bline" x1="588" y1="206" x2="916" y2="206"/>
+<text class="blabel" x="480" y="211" text-anchor="middle">TRUST BOUNDARY 1</text>
+
+<path class="flow" d="M 480 215 L 480 233" marker-end="url(#arrow)"/>
+
+<!-- ingest -->
+<rect class="box" x="64" y="234" width="832" height="72" rx="7"/>
+<text class="name" x="84" y="259">INGEST</text>
+<text class="tag" x="152" y="259">trusted code, untrusted data</text>
+<text class="sub" x="84" y="282">normalise · strip active content · delimit · tag provenance — output re-enters context as data, never as instruction</text>
+<rect class="chip" x="844" y="245" width="36" height="20" rx="5"/>
+<text class="chiptx" x="862" y="259" text-anchor="middle">I2</text>
+
+<path class="flow" d="M 480 306 L 480 325" marker-end="url(#arrow)"/>
+<text class="edge" x="492" y="321">labelled data</text>
+
+<!-- boundary 2 -->
+<line class="bline" x1="44" y1="334" x2="372" y2="334"/>
+<line class="bline" x1="588" y1="334" x2="916" y2="334"/>
+<text class="blabel" x="480" y="339" text-anchor="middle">TRUST BOUNDARY 2</text>
+
+<path class="flow" d="M 480 343 L 480 361" marker-end="url(#arrow)"/>
+
+<!-- agent -->
+<rect class="box" x="64" y="362" width="832" height="80" rx="7"/>
+<text class="name" x="84" y="388">AGENT</text>
+<text class="tag" x="146" y="388">model loop</text>
+<text class="tag-danger" x="232" y="388">UNTRUSTED COMPONENT — ASSUME FULLY STEERED</text>
+<text class="sub" x="84" y="412">Holds no capability of its own: a tool outside the task's scope has no handle it can name.</text>
+<text class="sub" x="84" y="430">Everything it emits is a <tspan class="mono">ProposedCall</tspan> — a request, not an effect.</text>
+<rect class="chip" x="844" y="374" width="36" height="20" rx="5"/>
+<text class="chiptx" x="862" y="388" text-anchor="middle">I1</text>
+
+<path class="flow" d="M 480 442 L 480 497" marker-end="url(#arrow)"/>
+<text class="edge" x="492" y="484">proposed call</text>
+
+<!-- ================= BOUNDARY 3 ================= -->
+<line class="bline3" x1="28" y1="506" x2="292" y2="506"/>
+<line class="bline3" x1="668" y1="506" x2="932" y2="506"/>
+<text class="blabel3" x="480" y="511" text-anchor="middle">TRUST BOUNDARY 3 · LOAD-BEARING</text>
+<text class="h2" x="480" y="530" text-anchor="middle">deterministic · model-free · reads no token of the agent's context</text>
+
+<!-- ================= EFFECT SIDE ================= -->
+<rect x="28" y="544" width="904" height="248" rx="10" fill="#eef7f1" stroke="#1f6b3a" stroke-width="2"/>
+<text class="region-label" x="44" y="568" fill="#1f6b3a">AUTHORISED SIDE</text>
+<text class="h2" x="180" y="568">reachable only through the broker</text>
+
+<!-- broker -->
+<rect class="box-strong" x="64" y="576" width="832" height="86" rx="7"/>
+<text class="name" x="84" y="604">BROKER</text>
+<text class="tag-ok" x="156" y="604">the only component that can authorise an effect</text>
+<text class="sub" x="84" y="627">scope check · schema validation · path confinement · egress allowlist · budget accounting · approval lookup</text>
+<text class="sub" x="84" y="646">Guards run in order and fail closed. A refusal is recorded with the check that produced it.</text>
+<rect class="chip" x="760" y="590" width="36" height="20" rx="5"/>
+<text class="chiptx" x="778" y="604" text-anchor="middle">I1</text>
+<rect class="chip" x="802" y="590" width="36" height="20" rx="5"/>
+<text class="chiptx" x="820" y="604" text-anchor="middle">I3</text>
+<rect class="chip" x="844" y="590" width="36" height="20" rx="5"/>
+<text class="chiptx" x="862" y="604" text-anchor="middle">I4</text>
+
+<path class="flow" d="M 480 662 L 480 679" marker-end="url(#arrow)"/>
+<text class="edge" x="492" y="676">authorised call only</text>
+
+<!-- boundary 4 -->
+<line class="bline" x1="44" y1="688" x2="372" y2="688"/>
+<line class="bline" x1="588" y1="688" x2="916" y2="688"/>
+<text class="blabel" x="480" y="693" text-anchor="middle">TRUST BOUNDARY 4</text>
+
+<path class="flow" d="M 480 697 L 480 715" marker-end="url(#arrow)"/>
+
+<!-- effect and audit -->
+<rect class="box" x="64" y="716" width="390" height="60" rx="7"/>
+<text class="name" x="84" y="741">EFFECT</text>
+<text class="sub" x="84" y="762">real system: a file, an HTTP call, a ticket</text>
+
+<rect class="box" x="506" y="716" width="390" height="60" rx="7"/>
+<text class="name" x="526" y="741">AUDIT</text>
+<text class="sub" x="526" y="762">append-only · task id, validated arguments, decision path</text>
+<rect class="chip" x="844" y="728" width="36" height="20" rx="5"/>
+<text class="chiptx" x="862" y="742" text-anchor="middle">I3</text>
+
+<path class="flow" d="M 454 752 L 499 752" marker-end="url(#arrow)"/>
+<text class="edge" x="476" y="741" text-anchor="middle">logged</text>
+
+<text class="foot" x="32" y="812">I1 per-task tool scope, at construction time · I2 tool output is data, never instruction · I3 bounded, attributable, approval-gated · I4 filesystem and network confined by construction</text>
+</svg>

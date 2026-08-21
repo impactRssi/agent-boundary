@@ -60,6 +60,17 @@ that the operator put on the allowlist, host compromise.
 
 ## 3. Architecture
 
+![Four trust boundaries. Untrusted content, the ingest path and the agent all sit inside one untrusted region; boundary 3 separates the agent from the deterministic broker, which is the only component that can turn a proposed call into an effect; boundary 4 separates the broker from the effect and the append-only audit trace.](docs/assets/trust-boundaries.svg)
+
+The agent sits **inside** the untrusted region. That placement is the argument
+everything else follows from.
+
+The broker is the load-bearing control: deterministic, model-free, and the only
+component that can authorise an effect.
+
+<details>
+<summary>The same diagram as text, for reading in a terminal</summary>
+
 ```
 untrusted content (docs, tickets, web, tool responses)
         │
@@ -79,11 +90,10 @@ untrusted content (docs, tickets, web, tool responses)
    [ audit  ]   append-only trace a human can reconstruct the decision from
 ```
 
-The agent sits **inside** the untrusted region. That placement is the argument
-everything else follows from.
+</details>
 
-The broker is the load-bearing control: deterministic, model-free, and the only
-component that can authorise an effect.
+Full boundary-by-boundary treatment:
+[`docs/THREAT_MODEL.md` §3](docs/THREAT_MODEL.md#3-trust-boundaries).
 
 ---
 

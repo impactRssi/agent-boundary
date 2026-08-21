@@ -65,6 +65,11 @@ Realistic carriers for that content:
 
 ## 3. Trust boundaries
 
+![Four trust boundaries. Untrusted content, the ingest path and the agent all sit inside one untrusted region; boundary 3 separates the agent from the deterministic broker, which is the only component that can turn a proposed call into an effect; boundary 4 separates the broker from the effect and the append-only audit trace.](assets/trust-boundaries.svg)
+
+<details>
+<summary>The same diagram as text, for reading in a terminal</summary>
+
 ```
              ┌─────────────────────── UNTRUSTED ────────────────────────┐
              │  tickets · documents · web pages · tool responses        │
@@ -111,6 +116,8 @@ Realistic carriers for that content:
                                   │     AUDIT      │  append-only
                                   └────────────────┘
 ```
+
+</details>
 
 **Boundary 3 is the one that carries the design.** It is the direct analogue of
 a policy enforcement point: deterministic, model-free, and the only thing in
