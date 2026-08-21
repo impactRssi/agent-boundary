@@ -69,6 +69,20 @@ jobs:
           uv run pytest tests --adversarial-guard --cov=agentboundary
           uv run bandit -c pyproject.toml -r src -ll
 
+      # v0.2.2 was tagged while pyproject still said 0.2.1, so the release
+      # carried artefacts named for a different version than the tag that
+      # produced them. Nothing checked, so nothing complained.
+      - name: Tag must match the package version
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME#v}"
+          version="$(uv run python -c 'import agentboundary; print(agentboundary.__version__)')"
+          if [ "${tag}" != "${version}" ]; then
+            echo "::error::Tag ${GITHUB_REF_NAME} does not match package version ${version}."
+            exit 1
+          fi
+          echo "tag ${GITHUB_REF_NAME} matches package version ${version}"
+
       - name: Build
         run: uv build
 
@@ -113,7 +127,8 @@ jobs:
           # grant is visible at the one step that needs it.
           token: ${{ secrets.GITHUB_TOKEN }}
           files: |
-            dist/*
+            dist/*.whl
+            dist/*.tar.gz
             sbom.wheel.cdx.json
             sbom.environment.cdx.json
           generate_release_notes: true
