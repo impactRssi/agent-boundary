@@ -1,0 +1,68 @@
+# Keep the pins current, as reviewed pull requests.
+#
+# Pinning every action to a commit SHA removes one failure mode -- an upstream
+# owner repointing a tag -- and introduces another: a digest is frozen at the
+# day it was resolved, including any vulnerability that was in it. A pin nobody
+# updates is a vulnerability nobody notices. This file is the other half of
+# that trade: the pin moves when a human reviews and merges a pull request, and
+# not otherwise.
+#
+# Updates are grouped so they arrive as something a person will actually read.
+# Minor and patch bumps for an ecosystem land in one pull request; a major bump
+# gets its own, because a major is where behaviour changes and a batch is where
+# that change hides.
+#
+# What this does NOT do:
+#   - It does not verify that the digest a bot writes is the digest that tag
+#     resolves to. Nothing offline can. `scripts/check_action_pins.py` checks
+#     the form of the pin, not its provenance; the reviewer checks the pin.
+#   - It does not merge anything. There is no auto-merge here, deliberately:
+#     an automated merge of third-party code is the supply-chain path this
+#     repository spends its CI closing.
+
+version: 2
+
+updates:
+  # The pipeline's own dependencies. Dependabot rewrites both the SHA and the
+  # trailing `# vX.Y.Z` comment, which is the other reason that comment is
+  # mandatory: without it the bot has nothing to bump from.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "Etc/UTC"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "ci"
+    groups:
+      github-actions:
+        applies-to: version-updates
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+      github-actions-security:
+        applies-to: security-updates
+        patterns: ["*"]
+
+  # Python: pyproject.toml and uv.lock. `uv sync --frozen` in CI and
+  # `pip-audit --require-hashes` against the exported lockfile both read what
+  # this keeps current, so a stale lockfile is a stale audit.
+  - package-ecosystem: "uv"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "Etc/UTC"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "build"
+    groups:
+      python:
+        applies-to: version-updates
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+      python-security:
+        applies-to: security-updates
+        patterns: ["*"]
