@@ -3,7 +3,7 @@
 Notable changes per release. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versioning is [semantic](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.2.0] — 2026-08-21
 
 ### Security
 
@@ -93,6 +93,29 @@ versioning is [semantic](https://semver.org/spec/v2.0.0.html).
   adversarial one, each with its own flag and floor. A tier emptied for any
   reason now fails the build instead of reporting success.
 
+### Measured
+
+Offline, synthetic corpora, on the reference machine — see
+[`benchmarks/results.json`](benchmarks/results.json):
+
+- Injection corpus: **39/39** blocked across 9 carrier types, rows A1–A9.
+- False refusals: **0/25** hand-written, **2/141** generated. Both corpora are
+  synthetic; the generated one exists to remove the hand-picking bias in the
+  first, and it is what found the egress bypass above.
+- Broker overhead: **0.129 ms** mean per authorised `fs.read`, p99 0.1457 ms,
+  authorisation only — excludes ingest and the handler's own work. Path
+  confinement is roughly 80% of it.
+- Caps fail closed and stay closed.
+
+### Still not true
+
+- No third-party review.
+- No CI run has ever executed. Every workflow change in this release is
+  verified statically and by the local gate; the first real run happens on
+  publication.
+- Both benign corpora are written by the author of the controls, directly or
+  through a generator. Neither is recorded traffic.
+
 ### Fixed
 
 - `EgressGuard` now authorises a host spelled with its trailing DNS root label
@@ -174,4 +197,5 @@ that accepts attacker-readable content is an exfiltration channel; there is no
 defence against a malicious operator; concurrent tasks sharing a budget pool
 are unsupported; no third-party review.
 
+[0.2.0]: https://github.com/impactRssi/agent-boundary/releases/tag/v0.2.0
 [0.1.0]: https://github.com/impactRssi/agent-boundary/releases/tag/v0.1.0
