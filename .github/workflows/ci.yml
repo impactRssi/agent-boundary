@@ -4,6 +4,14 @@
 # to be possible to look at a commit and see whether the attack corpus passed,
 # without that answer being averaged into a general test result. See ADR-0006.
 #
+# Every test tier runs under its own collection guard -- `--adversarial-guard`,
+# `--e2e-guard`, `--gui-guard`. A tier that can pass by collecting nothing
+# reports the same green tick whether it proved something or nothing, and the
+# e2e and gui tiers could do exactly that until node N-31: `make test-e2e`
+# reported success with the MCP SDK absent. The `guards-fail-closed` step
+# asserts from outside that each guard still fails on an empty tier, because a
+# regression in a guard would otherwise suppress its own alarm.
+#
 # Every `uses:` names a commit SHA, never a tag. A tag is a pointer its owner
 # can move, and moving it substitutes code inside a job that holds this
 # repository's GITHUB_TOKEN. The trailing comment records which tag the digest
@@ -92,14 +100,21 @@ jobs:
           version: ${{ env.UV_VERSION }}
           enable-cache: true
       - run: uv python install ${{ matrix.python-version }}
-      - run: uv sync --group dev --extra mcp --frozen
+      # The coverage step below runs the whole suite under every tier guard, so
+      # every tier's dependencies have to be here. Arming a guard against a tier
+      # whose dependencies were never installed would fail the build for the
+      # wrong reason.
+      - run: uv sync --group dev --group gui --extra mcp --frozen
+      - run: uv run playwright install --with-deps chromium
       - name: Unit tier
         run: uv run pytest tests/unit
       # Coverage over the whole suite. The transport and entry point are
       # exercised end to end by design; a unit-only figure would report them
       # as dead code and reward mocking the boundary under test.
       - name: Coverage floor
-        run: uv run pytest tests --adversarial-guard --cov=agentboundary --cov-report=term-missing
+        run: |
+          uv run pytest tests --adversarial-guard --e2e-guard --gui-guard \
+            --cov=agentboundary --cov-report=term-missing
 
   adversarial:
     name: adversarial corpus (blocking)
@@ -126,20 +141,16 @@ jobs:
       - name: Adversarial tier under the zero-collect and no-skip guard
         run: uv run pytest tests/adversarial --adversarial-guard -v
 
-      # The guard lives in our own conftest, so a regression that disabled it
-      # would also hide itself. This asserts from outside that arming the guard
-      # against an empty corpus still fails the process.
-      - name: Prove the guard itself still fails closed
-        run: |
-          set +e
-          uv run pytest tests/unit --adversarial-guard -q > /dev/null 2>&1
-          status=$?
-          set -e
-          if [ "$status" -eq 0 ]; then
-            echo "::error::Adversarial guard did not fail on an empty corpus. The control is broken."
-            exit 1
-          fi
-          echo "Guard fails closed on an empty corpus (exit ${status})."
+      # The guards live in our own conftest, so a regression that disabled one
+      # would also hide itself. This asserts from outside that arming each
+      # guard against a tier containing nothing still fails the process.
+      #
+      # Invoked through the Makefile rather than restated here: this file and
+      # `make check` claim to run the same thing, and two copies of a control
+      # drift. The target needs no tier dependencies -- it runs the unit tier
+      # and asserts the *other* tiers are reported empty.
+      - name: Prove every tier guard still fails closed
+        run: make guards-fail-closed
 
   e2e:
     name: end-to-end
@@ -161,8 +172,10 @@ jobs:
       # --extra mcp: the E2E tier drives the assembled system, and the MCP
       # server is how the system is meant to be assembled.
       - run: uv sync --group dev --extra mcp --frozen
-      - name: End-to-end tier
-        run: uv run pytest tests/e2e -v
+      # --e2e-guard: without it this job reports success on a tier whose MCP
+      # SDK is absent, which is exactly what it did before node N-31.
+      - name: End-to-end tier under the zero-collect and no-skip guard
+        run: uv run pytest tests/e2e --e2e-guard -v
       - name: Worked example runs offline
         run: uv run python examples/support_triage.py
 
@@ -191,8 +204,8 @@ jobs:
       # Drives a real browser against a trace produced by the real broker. A
       # GUI test over hand-written JSON would pass even if the broker stopped
       # recording refusals, which is one of the things the viewer exists to show.
-      - name: GUI tier
-        run: uv run pytest tests/gui -v
+      - name: GUI tier under the zero-collect and no-skip guard
+        run: uv run pytest tests/gui --gui-guard -v
 
   security:
     name: sast, dependency audit, secrets, pipeline hardening

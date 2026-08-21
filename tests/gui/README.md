@@ -26,3 +26,9 @@ Run with `make test-gui`. Requires the `gui` dependency group and a browser:
 ```bash
 uv sync --group gui && uv run playwright install chromium
 ```
+
+`make test-gui` passes `--gui-guard`, which fails the tier if it collected
+fewer than its floor of ten tests or skipped one. A GUI tier reduced to nothing
+by a missing browser must fail the build, not report success — the same rule
+the adversarial tier has had since ADR-0006, extended to this one in node N-31.
+See `tests/README.md`.
