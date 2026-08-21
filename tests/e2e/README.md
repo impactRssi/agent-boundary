@@ -62,5 +62,6 @@ uv sync --group dev --extra mcp
 ```
 
 Without it the transport module cannot be imported and this tier's central
-evidence is absent. Node N-31 makes that absence fail the build rather than
-report success.
+evidence is absent. `make test-e2e` passes `--e2e-guard`, so that absence now
+fails the build rather than reporting success on the 50 in-process tests that
+remain — which is precisely what it did before node N-31.

@@ -5,11 +5,17 @@
 
 .DEFAULT_GOAL := help
 .PHONY: help install format format-check lint types test-unit test-adversarial \
-        test-e2e test-gui coverage sast audit secrets actions-pinned \
-        workflows-hardened check clean
+        test-e2e test-gui coverage guards-fail-closed sast audit secrets \
+        actions-pinned workflows-hardened check clean
 
 UV ?= uv
 RUN := $(UV) run
+
+# One flag per guarded tier. Each fails the run if its tier collected fewer
+# items than its floor or skipped one. Declared in
+# agentboundary.testing.adversarial_guard, so this list and the code cannot
+# disagree about which tiers exist -- guards-fail-closed proves each one.
+TIER_GUARDS := --adversarial-guard --e2e-guard --gui-guard
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -44,18 +50,41 @@ test-adversarial: ## Adversarial tier, under the zero-collect / no-skip guard
 # environment. The tier drives a real MCP client against a real broker
 # subprocess; without the SDK its central evidence cannot even be imported.
 test-e2e: ## End-to-end tier over a real transport
-	$(RUN) --extra mcp pytest tests/e2e
+	$(RUN) --extra mcp pytest tests/e2e --e2e-guard
 
 test-gui: ## GUI tier, Playwright against the audit-trace viewer
-	$(RUN) --group gui pytest tests/gui
+	$(RUN) --group gui pytest tests/gui --gui-guard
 
 # Coverage is measured over the WHOLE suite, not the unit tier alone. The
 # transport, the entry point, and the handlers are exercised end to end by
 # design -- measuring only unit coverage would report them as dead code and
 # push someone to write unit tests that mock the boundary under test.
 coverage: ## Full suite with the coverage floor enforced
-	$(RUN) --group gui --extra mcp pytest tests --adversarial-guard \
+	$(RUN) --group gui --extra mcp pytest tests $(TIER_GUARDS) \
 		--cov=agentboundary --cov-report=term-missing
+
+# The guards live in our own conftest, so a regression that disabled one would
+# also hide itself. This asserts from outside that arming each guard against a
+# tier containing nothing still fails the process. Self-referential controls
+# need an external assertion; it is cheap, so it runs in the gate and not only
+# in CI. `tests/unit` is the empty tier for all three by construction.
+guards-fail-closed: ## Prove each tier guard still fails closed on an empty tier
+	@for flag in $(TIER_GUARDS); do \
+		if $(RUN) pytest tests/unit $$flag -q > /dev/null 2>&1; then \
+			echo "FAIL: $$flag did not fail on an empty tier. The control is broken."; \
+			exit 1; \
+		fi; \
+		echo "  $$flag fails closed on an empty tier."; \
+	done
+	@# A tier can also be emptied without disappearing: -k, -m and --deselect
+	@# all run inside pytest_collection_modifyitems, where a conftest is called
+	@# first. Counting there counts what was discovered, not what will run.
+	@if $(RUN) pytest tests/adversarial --adversarial-guard -k no_such_test -q \
+			> /dev/null 2>&1; then \
+		echo "FAIL: a guard counted deselected items as evidence."; \
+		exit 1; \
+	fi
+	@echo "  a tier emptied by a selection expression fails closed too."
 
 sast: ## SAST over the package. Must return zero high-severity findings
 	$(RUN) bandit -c pyproject.toml -r src -ll
@@ -87,9 +116,9 @@ actions-pinned: ## Fail if any workflow references an action by a movable tag
 workflows-hardened: ## Fail if a CI job takes a privilege it does not need
 	$(RUN) python scripts/check_workflow_hardening.py
 
-check: format-check lint types test-unit test-adversarial test-e2e test-gui coverage sast audit secrets actions-pinned workflows-hardened ## The full gate, in CI order
+check: format-check lint types test-unit test-adversarial test-e2e test-gui coverage guards-fail-closed sast audit secrets actions-pinned workflows-hardened ## The full gate, in CI order
 	@echo
-	@echo "gate passed: format, lint, types, unit, adversarial, e2e, gui, coverage, sast, audit, secrets, action pins, workflow hardening"
+	@echo "gate passed: format, lint, types, unit, adversarial, e2e, gui, coverage, tier guards, sast, audit, secrets, action pins, workflow hardening"
 
 clean: ## Remove build and cache artifacts
 	rm -f .requirements.audit.txt
