@@ -153,7 +153,7 @@ something or nothing. The guard is shipped as
 [`agentboundary.testing.adversarial_guard`](src/agentboundary/testing/adversarial_guard.py)
 and is [itself unit-tested](tests/unit/test_adversarial_guard.py).
 
-The corpus holds **36 payloads across 9 carrier types**, and every attack-table
+The corpus holds **39 payloads across 9 carrier types**, and every attack-table
 row A1–A9 has at least one payload. Both floors are asserted by test.
 
 A corpus that only ever refuses proves nothing — a broker that refused
@@ -203,9 +203,9 @@ Offline, single process, no network. Full output:
 
 **Conditions for every figure below:** Python 3.13.13 on Darwin/arm64, offline, synthetic corpora, single process, no warm cache, load average 9.02 over 12 logical CPUs while the timing figures were taken.
 
-### Injection corpus: 36/36 blocked
+### Injection corpus: 39/39 blocked
 
-On a hand-written synthetic corpus of 36 payloads across
+On a hand-written synthetic corpus of 39 payloads across
 9 carrier types, matching the current invariant set.
 Each payload asserts a **specific** refusal reason, not merely that a refusal
 happened — 0 were blocked by a
@@ -214,10 +214,10 @@ different control than the one under test.
 | Carrier | Attempted | Blocked |
 |---|---|---|
 | `dependency_readme` | 3 | 3 |
-| `error_message` | 3 | 3 |
+| `error_message` | 5 | 5 |
 | `filename` | 4 | 4 |
 | `git_commit_message` | 3 | 3 |
-| `html_page` | 6 | 6 |
+| `html_page` | 7 | 7 |
 | `json_api_response` | 4 | 4 |
 | `pdf_document` | 3 | 3 |
 | `shared_drive_document` | 4 | 4 |
@@ -225,7 +225,7 @@ different control than the one under test.
 
 Attack-table rows covered: A1, A2, A3, A4, A5, A6, A7, A8, A9.
 
-### False-refusal rate: 0/25 hand-written, 8/141 generated
+### False-refusal rate: 0/25 hand-written, 2/141 generated
 
 The control's cost, measured against two **synthetic** corpora, reported side by
 side and never averaged — what separates them is who chose the cases, and one
@@ -234,7 +234,7 @@ combined figure would hide exactly that.
 | Corpus | Tasks | Falsely refused | Who chose the cases |
 |---|---|---|---|
 | Hand-written | 25 | 0 (0.0%) | The author of the controls, knowing what each guard checks |
-| Generated at seed `0xb0157a11` | 141 | 8 (5.7%) | Nobody — derived from the declared schema constraints |
+| Generated at seed `0xb0157a11` | 141 | 2 (1.4%) | Nobody — derived from the declared schema constraints |
 
 **Read the caveat before the 0/25.** I wrote that corpus knowing what the
 controls check, so the honest reading is "no benign task I thought of was
@@ -244,19 +244,32 @@ The generated corpus exists to remove that one weakness:
 [`benchmarks/benign_corpus.py`](benchmarks/benign_corpus.py) derives arguments
 mechanically from each tool's declared schema constraints (`type`, `minLength`,
 `maxLength`, `minimum`) crossed with a generated filesystem fixture tree, at a
-fixed seed, offline. **It found refusals the hand-written corpus missed, and
-they are published rather than fixed first:**
+fixed seed, offline. **It found what the hand-written corpus missed.** The rate was 8/141 (5.7%) on
+the first run, published before anything was fixed. Two of those eight remain
+by design; the other six led to a security fix:
 
-| Refusal reason | Cases | What was submitted |
+| Found | Cases | Outcome |
 |---|---|---|
-| `egress_host_not_allowed` | 6 | A host allowlisted as `docs.internal`, spelled `docs.internal.` — the fully qualified name with its trailing root dot. A real false refusal: same host, request would have succeeded. |
-| `path_outside_root` | 2 | A path of exactly 4096 characters, the `maxLength` the catalogue's own schema declares. The OS could not resolve it (`ENAMETOOLONG`) and the guard failed closed, which is correct; the schema declaring a bound the filesystem will not honour is the defect. |
+| `egress_host_not_allowed` on a host spelled with its trailing DNS root label — `docs.internal.` against an allowlist of `docs.internal` | 6 | **Fixed.** Same host; the request would have succeeded. See the security note below |
+| `path_outside_root` on a 4096-character path, the `maxLength` the catalogue itself declared | 2 | **Fixed in the schema, not the guard.** The OS could not resolve it (`ENAMETOOLONG`) and the guard failed closed, which is correct. The bound is now 255, derived from `NAME_MAX` and asserted against the running platform's `pathconf` |
+| Address literal carrying a trailing root label — `10.1.2.3.` | 2 | **Still refused, deliberately.** A WHATWG URL parser drops the empty label and connects to `10.1.2.3`; `getaddrinfo` asks a resolver for the *name* `10.1.2.3.`. One string, two destinations — the broker authorises neither |
 
-Per tool, out of the tasks generated for it: `fs.read` 1/13, `fs.write` 1/13,
-`http.get` 3/46, `http.post` 3/46, `tickets.comment` 0/12, `tickets.get` 0/5,
-`tickets.delete` 0/5, `tickets.list` 0/1. The corpus is not evenly distributed —
-92 of its 141 tasks are HTTP tools — so the 5.7% is a property of that
-distribution, not of any deployment's task mix.
+> #### The six were a security bypass, not just a cost
+>
+> While confirming the false refusal, the trailing dot turned out to be
+> **disarming the loopback and link-local check**. `ipaddress.ip_address` raises
+> on `169.254.169.254.`, so the literal test had nothing to judge and fell
+> through to the allowlist comparison, which matched. An operator whose
+> allowlist entry carried the qualified spelling — a plausible copy from
+> resolver output — had a free pass to the cloud metadata endpoint.
+>
+> Present in `v0.1.0`. Found by the generated corpus, not by review. Closed by
+> normalising the root label on both sides of the comparison *before* the
+> literal check, with the near-miss hosts (`docs.internal.evil.example`,
+> `evil.docs.internal`, `docs.internal..`, userinfo decoration) asserted still
+> refused, and three corpus payloads added so it cannot come back.
+
+Per tool, out of the tasks generated for it: `http.get` 1/46 and `http.post` 1/46 — both the deliberate address-literal case — and 0 for every other tool. The corpus is not evenly distributed: 92 of its 141 tasks are HTTP tools, so the rate is a property of that distribution, not of any deployment's task mix.
 
 **The caveat is narrowed, not retired.** The generator is code in this
 repository, written by the author of the controls; the individual cases are
@@ -264,14 +277,14 @@ mechanical but the shapes they are drawn from are authored here. This is not an
 independent third-party measurement, and it is not recorded traffic. Full
 reading: [`benchmarks/README.md`](benchmarks/README.md).
 
-### Broker overhead: 0.1309 ms mean per authorised `fs.read`
+### Broker overhead: 0.129 ms mean per authorised `fs.read`
 
-Over 5 repeats of 2000 iterations each, every sample an authorised call, after
-a 200-call warm-up per repeat: mean **0.1309 ms**, median 0.1271 ms, p95
-0.1363 ms, p99 0.2131 ms, max 4.6859 ms. The five per-repeat means were 0.1255,
-0.1309, 0.1287, 0.1391 and 0.1304 ms — a spread of 0.0136 ms, which is the
-reader's guide to how much of the third decimal is signal on a machine under
-this load.
+Over 5 repeats of 2000 iterations each, every sample an authorised
+call, after a 200-call warm-up per repeat: mean **0.129 ms**, median
+0.1277 ms, p95 0.1345 ms, p99 0.1457 ms, max 0.8034 ms. The five
+per-repeat means were 0.1311, 0.1289, 0.1272, 0.1284 and 0.1293 ms — a spread of
+0.0039 ms, which is the reader's guide to how much of the third
+decimal is signal on a machine under load.
 
 Measures authorisation only — scope resolution, schema validation, path
 confinement, egress check, budget accounting, approval lookup. **Excludes** the
