@@ -55,20 +55,171 @@
     "blocked_for_the_wrong_reason": []
   },
   "false_refusals": {
-    "tasks": 25,
-    "authorised": 25,
-    "falsely_refused": 0,
-    "false_refusal_rate": 0.0,
-    "refusals": [],
-    "corpus": "synthetic, hand-written, 25 tasks; several deliberately near a boundary"
+    "hand_written": {
+      "tasks": 25,
+      "authorised": 25,
+      "falsely_refused": 0,
+      "false_refusal_rate": 0.0,
+      "refused_by_reason": {},
+      "by_tool": {
+        "fs.read": {
+          "tasks": 9,
+          "refused": 0
+        },
+        "fs.write": {
+          "tasks": 2,
+          "refused": 0
+        },
+        "http.get": {
+          "tasks": 7,
+          "refused": 0
+        },
+        "http.post": {
+          "tasks": 1,
+          "refused": 0
+        },
+        "tickets.comment": {
+          "tasks": 2,
+          "refused": 0
+        },
+        "tickets.get": {
+          "tasks": 3,
+          "refused": 0
+        },
+        "tickets.list": {
+          "tasks": 1,
+          "refused": 0
+        }
+      },
+      "refusals": [],
+      "corpus": "synthetic, hand-written by the author of the controls, 25 tasks; several deliberately near a boundary"
+    },
+    "generated": {
+      "tasks": 141,
+      "authorised": 133,
+      "falsely_refused": 8,
+      "false_refusal_rate": 0.0567,
+      "refused_by_reason": {
+        "egress_host_not_allowed": 6,
+        "path_outside_root": 2
+      },
+      "by_tool": {
+        "fs.read": {
+          "tasks": 13,
+          "refused": 1
+        },
+        "fs.write": {
+          "tasks": 13,
+          "refused": 1
+        },
+        "http.get": {
+          "tasks": 46,
+          "refused": 3
+        },
+        "http.post": {
+          "tasks": 46,
+          "refused": 3
+        },
+        "tickets.comment": {
+          "tasks": 12,
+          "refused": 0
+        },
+        "tickets.delete": {
+          "tasks": 5,
+          "refused": 0
+        },
+        "tickets.get": {
+          "tasks": 5,
+          "refused": 0
+        },
+        "tickets.list": {
+          "tasks": 1,
+          "refused": 0
+        }
+      },
+      "refusals": [
+        {
+          "id": "generated-013",
+          "label": "fs.read path=at-the-declared-maxLength",
+          "reason": "path_outside_root",
+          "detail": "argument 'path': could not be resolved ([Errno 63] File name too long: '<fs_root>/pppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp/pppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp/pppppppppppppppp ...(truncated)"
+        },
+        {
+          "id": "generated-026",
+          "label": "fs.write content=prose-1 path=at-the-declared-maxLength",
+          "reason": "path_outside_root",
+          "detail": "argument 'path': could not be resolved ([Errno 63] File name too long: '<fs_root>/pppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp/pppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp/pppppppppppppppp ...(truncated)"
+        },
+        {
+          "id": "generated-037",
+          "label": "http.get url=fully-qualified-trailing-dot@docs.internal",
+          "reason": "egress_host_not_allowed",
+          "detail": "argument 'url': host 'docs.internal.' is not allowlisted (10.1.2.3, 2001:db8::1, docs.internal, tickets.internal)"
+        },
+        {
+          "id": "generated-049",
+          "label": "http.get url=fully-qualified-trailing-dot@tickets.internal",
+          "reason": "egress_host_not_allowed",
+          "detail": "argument 'url': host 'tickets.internal.' is not allowlisted (10.1.2.3, 2001:db8::1, docs.internal, tickets.internal)"
+        },
+        {
+          "id": "generated-061",
+          "label": "http.get url=fully-qualified-trailing-dot@10.1.2.3",
+          "reason": "egress_host_not_allowed",
+          "detail": "argument 'url': host '10.1.2.3.' is not allowlisted (10.1.2.3, 2001:db8::1, docs.internal, tickets.internal)"
+        },
+        {
+          "id": "generated-083",
+          "label": "http.post body=at-the-declared-maxLength url=fully-qualified-trailing-dot@docs.internal",
+          "reason": "egress_host_not_allowed",
+          "detail": "argument 'url': host 'docs.internal.' is not allowlisted (10.1.2.3, 2001:db8::1, docs.internal, tickets.internal)"
+        },
+        {
+          "id": "generated-095",
+          "label": "http.post body=prose-0 url=fully-qualified-trailing-dot@tickets.internal",
+          "reason": "egress_host_not_allowed",
+          "detail": "argument 'url': host 'tickets.internal.' is not allowlisted (10.1.2.3, 2001:db8::1, docs.internal, tickets.internal)"
+        },
+        {
+          "id": "generated-107",
+          "label": "http.post body=prose-1 url=fully-qualified-trailing-dot@10.1.2.3",
+          "reason": "egress_host_not_allowed",
+          "detail": "argument 'url': host '10.1.2.3.' is not allowlisted (10.1.2.3, 2001:db8::1, docs.internal, tickets.internal)"
+        }
+      ],
+      "corpus": "synthetic, mechanically generated from the tool schemas at seed 0xb0157a11, 141 tasks; not independent -- the generator is code in this repository",
+      "provenance": "Mechanically derived from the tool schemas in agentboundary.testing.catalogue plus a generated filesystem fixture tree. Not independent: the generator is code in this repository, written by the author of the controls.",
+      "schema_keywords": {
+        "declared_by_the_catalogue": [
+          "maxLength",
+          "minLength",
+          "minimum",
+          "properties",
+          "required",
+          "type"
+        ],
+        "supported_but_absent_from_the_catalogue": [
+          "additionalProperties",
+          "const",
+          "enum",
+          "items",
+          "maxItems",
+          "maximum",
+          "minItems",
+          "pattern"
+        ]
+      },
+      "artifact": "benchmarks/benign/generated.json",
+      "seed": "0xb0157a11"
+    }
   },
   "overhead": {
     "iterations": 2000,
-    "mean_ms": 0.1162,
-    "median_ms": 0.1104,
-    "p95_ms": 0.1298,
-    "p99_ms": 0.1515,
-    "max_ms": 0.3275,
+    "mean_ms": 0.1463,
+    "median_ms": 0.1269,
+    "p95_ms": 0.2922,
+    "p99_ms": 0.4287,
+    "max_ms": 0.7832,
     "measures": "authorisation only: scope resolution, schema validation, path confinement, egress check, budget accounting, approval lookup. Excludes ingest and the handler's own work."
   },
   "cap_behaviour": {

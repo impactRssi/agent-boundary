@@ -186,24 +186,50 @@ different control than the one under test.
 
 Attack-table rows covered: A1, A2, A3, A4, A5, A6, A7, A8, A9.
 
-### False-refusal rate: 0/25 (0.0%)
+### False-refusal rate: 0/25 hand-written, 8/141 generated
 
-**Read the caveat before the number.** I wrote the benign corpus, and I wrote it
-knowing what the controls check. The honest reading of 0/25 is
-"no benign task I thought of was refused" — not "the control has no cost".
+The control's cost, measured against two **synthetic** corpora, reported side by
+side and never averaged — what separates them is who chose the cases, and one
+combined figure would hide exactly that.
 
-The corpus deliberately includes cases near a boundary: a path that dips through
-`..` and returns inside the root, an allowlisted host on a non-default port, a
-filename containing a `..` substring that is not a traversal, uppercase hosts,
-unicode filenames. A rate measured only on obviously-safe calls measures
-nothing. It remains a corpus of my own construction, and this is the figure most
-likely to move once someone points the broker at real work.
+| Corpus | Tasks | Falsely refused | Who chose the cases |
+|---|---|---|---|
+| Hand-written | 25 | 0 (0.0%) | The author of the controls, knowing what each guard checks |
+| Generated at seed `0xb0157a11` | 141 | 8 (5.7%) | Nobody — derived from the declared schema constraints |
 
-### Broker overhead: 0.1162 ms mean per call
+**Read the caveat before the 0/25.** I wrote that corpus knowing what the
+controls check, so the honest reading is "no benign task I thought of was
+refused" — not "the control has no cost".
+
+The generated corpus exists to remove that one weakness:
+[`benchmarks/benign_corpus.py`](benchmarks/benign_corpus.py) derives arguments
+mechanically from each tool's declared schema constraints (`type`, `minLength`,
+`maxLength`, `minimum`) crossed with a generated filesystem fixture tree, at a
+fixed seed, offline. **It found refusals the hand-written corpus missed, and
+they are published rather than fixed first:**
+
+| Refusal reason | Cases | What was submitted |
+|---|---|---|
+| `egress_host_not_allowed` | 6 | A host allowlisted as `docs.internal`, spelled `docs.internal.` — the fully qualified name with its trailing root dot. A real false refusal: same host, request would have succeeded. |
+| `path_outside_root` | 2 | A path of exactly 4096 characters, the `maxLength` the catalogue's own schema declares. The OS could not resolve it (`ENAMETOOLONG`) and the guard failed closed, which is correct; the schema declaring a bound the filesystem will not honour is the defect. |
+
+Per tool, out of the tasks generated for it: `fs.read` 1/13, `fs.write` 1/13,
+`http.get` 3/46, `http.post` 3/46, `tickets.comment` 0/12, `tickets.get` 0/5,
+`tickets.delete` 0/5, `tickets.list` 0/1. The corpus is not evenly distributed —
+92 of its 141 tasks are HTTP tools — so the 5.7% is a property of that
+distribution, not of any deployment's task mix.
+
+**The caveat is narrowed, not retired.** The generator is code in this
+repository, written by the author of the controls; the individual cases are
+mechanical but the shapes they are drawn from are authored here. This is not an
+independent third-party measurement, and it is not recorded traffic. Full
+reading: [`benchmarks/README.md`](benchmarks/README.md).
+
+### Broker overhead: 0.1463 ms mean per call
 
 Over 2000 iterations after a 200-call warm-up:
-mean **0.1162 ms**, median 0.1104 ms, p95 0.1298 ms,
-p99 0.1515 ms.
+mean **0.1463 ms**, median 0.1269 ms, p95 0.2922 ms,
+p99 0.4287 ms.
 
 Measures authorisation only — scope resolution, schema validation, path
 confinement, egress check, budget accounting, approval lookup. **Excludes** the
@@ -238,10 +264,12 @@ Read this section. It is the one that tells you whether this is useful to you.
 5. **No defence against a malicious operator**, by design. Whoever configures
    the task, the allowlist, and the approval policy is trusted.
 6. **No claim about model alignment.** The design assumes the model is hostile.
-7. **The benign-task corpus is synthetic and I wrote it**, knowing what the
-   controls check. The 0% false-refusal rate should be read as "no benign task
-   I thought of was refused", which is materially weaker than a rate measured
-   against traffic someone else generated.
+7. **Both benign-task corpora are synthetic, and neither is independent.** The
+   hand-written one I wrote knowing what the controls check, so its 0/25 reads
+   as "no benign task I thought of was refused". The generated one removes the
+   hand-picking but not the provenance — I wrote the generator too. Both are
+   materially weaker than a rate measured against traffic someone else
+   generated, and the generated corpus already refuses 8 of its 141 tasks (§6).
 8. **Concurrent tasks sharing a budget pool are not supported** in v0.1.0.
 9. **No third-party security review** at time of writing.
 

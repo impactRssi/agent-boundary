@@ -43,6 +43,26 @@ from agentboundary.model import Caps, Irreversibility, ProposedCall, Task
 from agentboundary.testing import load_corpus
 from agentboundary.testing.catalogue import reference_registry
 
+# Two spellings because this file is run two ways: directly, where Python puts
+# `benchmarks/` on sys.path, and loaded by path from the E2E tier, where the
+# repository root is on sys.path instead.
+try:
+    from benign_corpus import (
+        CORPUS_FILE,
+        Fixture,
+        expand_arguments,
+        generate_corpus,
+        materialise_fixture,
+    )
+except ModuleNotFoundError:  # pragma: no cover -- depends on how the file was loaded
+    from benchmarks.benign_corpus import (
+        CORPUS_FILE,
+        Fixture,
+        expand_arguments,
+        generate_corpus,
+        materialise_fixture,
+    )
+
 ROOT = Path(__file__).resolve().parents[1]
 CORPUS_DIR = ROOT / "corpus" / "payloads"
 BENIGN_FILE = ROOT / "benchmarks" / "benign" / "tasks.json"
@@ -114,13 +134,100 @@ def measure_injection_corpus() -> dict[str, Any]:
     }
 
 
-def measure_false_refusals() -> dict[str, Any]:
-    """The control's cost. Reported honestly, especially when it is bad."""
-    tasks: list[dict[str, Any]] = json.loads(BENIGN_FILE.read_text(encoding="utf-8"))
+def _redact(text: str, workspace: Path) -> str:
+    """Strip the temporary root and cap the length.
+
+    Both are reproducibility requirements: a detail carrying a per-run
+    temporary directory would make two runs of the harness disagree, and a
+    detail quoting a 4096-character path argument would bury the reason it
+    exists to convey. The resolved form is stripped first because macOS
+    resolves the temporary directory through ``/private``, so the raw and
+    resolved spellings both appear in guard details.
+    """
+    cleaned = text
+    for spelling in (str(workspace.resolve()), str(workspace)):
+        cleaned = cleaned.replace(spelling, "<fs_root>")
+    return cleaned if len(cleaned) <= 300 else cleaned[:300] + " ...(truncated)"
+
+
+def _evaluate_benign(
+    tasks: Sequence[Mapping[str, Any]], workspace: Path, corpus: str
+) -> dict[str, Any]:
+    """Run one benign corpus through the broker and count what it refused."""
     registry = reference_registry()
     refused: list[dict[str, str]] = []
+    by_tool: dict[str, dict[str, int]] = {}
     authorised = 0
 
+    for entry in tasks:
+        task = Task(
+            id=entry["id"],
+            tool_scope=frozenset(entry["tool_scope"]),
+            fs_root=str(workspace),
+            egress_allowlist=frozenset(entry["egress_allowlist"]),
+            caps=CAPS,
+        )
+        arguments = expand_arguments(entry["arguments"], workspace)
+        tool = registry.scope_for(task).get(entry["tool_name"])
+        assert tool is not None  # noqa: S101 -- both corpora name catalogue tools
+
+        # Irreversible benign work carries the approval a real operator would
+        # have granted. Counting an unapproved irreversible call as a false
+        # refusal would measure the operator's absence, not the control's cost.
+        approvals = ApprovalStore()
+        if tool.irreversibility is Irreversibility.IRREVERSIBLE:
+            approvals = ApprovalStore(
+                [
+                    ApprovalRecord(
+                        task_id=task.id,
+                        tool_name=tool.name,
+                        arg_digest=argument_digest(arguments),
+                        granted_by="operator@example.test",
+                        expires_at=time.time() + 3600,
+                    )
+                ]
+            )
+
+        broker = Broker(task, registry.scope_for(task), _guards(task, approvals))
+        decision = broker.authorise(ProposedCall(entry["tool_name"], arguments))
+        bucket = by_tool.setdefault(entry["tool_name"], {"tasks": 0, "refused": 0})
+        bucket["tasks"] += 1
+        if decision.authorised:
+            authorised += 1
+        else:
+            bucket["refused"] += 1
+            refused.append(
+                {
+                    "id": entry["id"],
+                    "label": entry["label"],
+                    "reason": str(decision.reason),
+                    "detail": _redact(
+                        decision.checks[-1].detail if decision.checks else "", workspace
+                    ),
+                }
+            )
+
+    total = len(tasks)
+    return {
+        "tasks": total,
+        "authorised": authorised,
+        "falsely_refused": len(refused),
+        "false_refusal_rate": round(len(refused) / total, 4) if total else 0.0,
+        # Broken down as well as totalled: a single count says the control has
+        # a cost, the breakdown says which control is charging it.
+        "refused_by_reason": dict(sorted(Counter(item["reason"] for item in refused).items())),
+        # Per tool as well, because the corpus is not evenly distributed across
+        # tools: enumerating spellings gives a URL-shaped tool far more cases
+        # than a no-argument one, and an aggregate rate hides that.
+        "by_tool": dict(sorted(by_tool.items())),
+        "refusals": refused,
+        "corpus": corpus,
+    }
+
+
+def measure_hand_written_false_refusals() -> dict[str, Any]:
+    """The control's cost on the corpus its author hand-picked. The weak one."""
+    tasks: list[dict[str, Any]] = json.loads(BENIGN_FILE.read_text(encoding="utf-8"))
     with TemporaryDirectory(prefix="ab-benign-") as raw_root:
         workspace = Path(raw_root) / "workspace"
         (workspace / "docs").mkdir(parents=True)
@@ -129,59 +236,50 @@ def measure_false_refusals() -> dict[str, Any]:
             (workspace / name).write_text("x", encoding="utf-8")
         (workspace / "docs" / "policy.md").write_text("x", encoding="utf-8")
         (workspace / "a/b/c/d/e/deep.md").write_text("x", encoding="utf-8")
+        return _evaluate_benign(
+            tasks,
+            workspace,
+            "synthetic, hand-written by the author of the controls, 25 tasks; "
+            "several deliberately near a boundary",
+        )
 
-        for entry in tasks:
-            task = Task(
-                id=entry["id"],
-                tool_scope=frozenset(entry["tool_scope"]),
-                fs_root=str(workspace),
-                egress_allowlist=frozenset(entry["egress_allowlist"]),
-                caps=CAPS,
-            )
-            arguments = entry["arguments"]
-            tool = registry.scope_for(task).get(entry["tool_name"])
-            assert tool is not None  # noqa: S101 -- corpus is self-consistent
 
-            # Irreversible benign work carries the approval a real operator
-            # would have granted. Counting an unapproved irreversible call as
-            # a false refusal would measure the operator's absence, not the
-            # control's cost.
-            approvals = ApprovalStore()
-            if tool.irreversibility is Irreversibility.IRREVERSIBLE:
-                approvals = ApprovalStore(
-                    [
-                        ApprovalRecord(
-                            task_id=task.id,
-                            tool_name=tool.name,
-                            arg_digest=argument_digest(arguments),
-                            granted_by="operator@example.test",
-                            expires_at=time.time() + 3600,
-                        )
-                    ]
-                )
+def measure_generated_false_refusals() -> dict[str, Any]:
+    """The control's cost on a corpus nobody hand-picked (N-37).
 
-            broker = Broker(task, registry.scope_for(task), _guards(task, approvals))
-            decision = broker.authorise(ProposedCall(entry["tool_name"], arguments))
-            if decision.authorised:
-                authorised += 1
-            else:
-                refused.append(
-                    {
-                        "id": entry["id"],
-                        "label": entry["label"],
-                        "reason": str(decision.reason),
-                        "detail": decision.checks[-1].detail if decision.checks else "",
-                    }
-                )
+    Same measurement, different provenance: every argument is derived from a
+    declared schema constraint and a generated fixture tree, so no case was
+    chosen by someone who knew what each guard checks. Still not independent --
+    the generator is code in this repository.
+    """
+    corpus = generate_corpus()
+    fixture = Fixture.from_json(corpus["fixture"])
+    with TemporaryDirectory(prefix="ab-generated-") as raw_root:
+        workspace = Path(raw_root) / "workspace"
+        materialise_fixture(fixture, workspace)
+        result = _evaluate_benign(
+            corpus["tasks"],
+            workspace,
+            f"synthetic, mechanically generated from the tool schemas at seed "
+            f"{corpus['seed']:#x}, {len(corpus['tasks'])} tasks; not independent -- "
+            f"the generator is code in this repository",
+        )
+    result["provenance"] = corpus["provenance"]
+    result["schema_keywords"] = corpus["schema_keywords"]
+    result["artifact"] = str(CORPUS_FILE.relative_to(ROOT))
+    result["seed"] = f"{corpus['seed']:#x}"
+    return result
 
-    total = len(tasks)
+
+def measure_false_refusals() -> dict[str, Any]:
+    """Both corpora, side by side, with no combined figure.
+
+    Averaging the two would hide exactly what distinguishes them -- who chose
+    the cases -- which is the only reason the second corpus exists.
+    """
     return {
-        "tasks": total,
-        "authorised": authorised,
-        "falsely_refused": len(refused),
-        "false_refusal_rate": round(len(refused) / total, 4) if total else 0.0,
-        "refusals": refused,
-        "corpus": "synthetic, hand-written, 25 tasks; several deliberately near a boundary",
+        "hand_written": measure_hand_written_false_refusals(),
+        "generated": measure_generated_false_refusals(),
     }
 
 
@@ -294,14 +392,20 @@ def _report(results: Mapping[str, Any]) -> str:
         add(f"  BLOCKED FOR THE WRONG REASON: {corpus['blocked_for_the_wrong_reason']}")
     add("")
 
-    benign: Mapping[str, Any] = results["false_refusals"]
-    add(
-        f"False-refusal rate: {benign['falsely_refused']}/{benign['tasks']} "
-        f"({benign['false_refusal_rate'] * 100:.1f}%)"
-    )
-    add(f"  corpus: {benign['corpus']}")
-    for refusal in benign["refusals"]:
-        add(f"  refused: {refusal['id']} ({refusal['label']}) -- {refusal['reason']}")
+    # Side by side, never combined: the two corpora differ in who chose the
+    # cases, and one averaged rate would hide precisely that.
+    for provenance, benign in results["false_refusals"].items():
+        add(
+            f"False-refusal rate ({provenance}): "
+            f"{benign['falsely_refused']}/{benign['tasks']} "
+            f"({benign['false_refusal_rate'] * 100:.1f}%)"
+        )
+        add(f"  corpus: {benign['corpus']}")
+        for tool, counts in benign["by_tool"].items():
+            add(f"    {tool:<18} {counts['refused']}/{counts['tasks']} refused")
+        for refusal in benign["refusals"]:
+            add(f"  refused: {refusal['id']} ({refusal['label']}) -- {refusal['reason']}")
+            add(f"    {refusal['detail']}")
     add("")
 
     overhead = results["overhead"]
