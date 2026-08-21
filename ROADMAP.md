@@ -477,7 +477,7 @@ None of the above is visible while the repository exists only on one laptop.
   on C1 and C2: publishing a repository whose CI is unhardened and whose test
   claims are overstated invites exactly the review it would fail.
 - **Tests** n/a — release node.
-- [ ] Merged
+- [x] Merged
 
 #### N-36 — Publish the package
 - **Depends on** N-35 · **Invariant** none
