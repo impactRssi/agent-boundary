@@ -231,6 +231,29 @@ is marketing.
    someone else generated, weaker again than production, and is reported as
    such wherever the number appears.
 7. **No third-party review** at time of writing.
+8. **Digest pinning bounds one hop.** Every action in the pipeline is pinned to
+   a commit SHA, and a check fails the build if that stops being true. It does
+   not bound what a pinned action fetches *at runtime*: a pinned action is free
+   to download code by tag once it is executing.
+9. **The egress policy is an audit, not a bound.** `harden-runner` runs in
+   audit mode, so a clean run records where a job went — it is not evidence
+   that a job could not have gone elsewhere. It is also third-party code
+   running first in every job, and its telemetry cannot be disabled while the
+   policy is `audit`. Moving to `block` requires first measuring the legitimate
+   egress set; a blocking policy we have not measured would fail closed on the
+   wrong thing.
+10. **The pin check verifies form, not correspondence.** It proves offline that
+    every `uses:` names a 40-character SHA with a trailing tag comment. Nothing
+    machine-checks that the SHA is what that tag actually resolves to — that is
+    the reviewer's job, and the mandatory comment exists to make it possible.
+11. **`harden-runner` on the `gate` job is unverified.** It runs under
+    `permissions: {}`, where `github.token` carries no scopes. Its documentation
+    describes the token as rate-limit avoidance only, so this should hold, but
+    no CI run has confirmed it — and `gate` is the required check. If the
+    assumption is wrong, the failure lands on the one job that must stay green.
+12. **`dependency-review` is visible but not blocking** until branch protection
+    lists it as a required check, which is a repository setting no file in this
+    tree can assert.
 
 ---
 
