@@ -3,7 +3,16 @@
 Notable changes per release. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versioning is [semantic](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.2.1] — 2026-08-21
+
+**Use this instead of `v0.2.0`.** That tag is published but its commit does not
+pass CI — it was cut before CI had ever run, and the first run found three
+things nothing local could have caught. The tag is left where it is rather than
+moved, because a published tag quietly relocated to a greener commit is the
+same dishonesty as an edited benchmark.
+
+This is the first release whose commit has a green CI run behind it, on Python
+3.11, 3.12 and 3.13.
 
 ### Fixed
 
@@ -226,5 +235,6 @@ that accepts attacker-readable content is an exfiltration channel; there is no
 defence against a malicious operator; concurrent tasks sharing a budget pool
 are unsupported; no third-party review.
 
+[0.2.1]: https://github.com/impactRssi/agent-boundary/releases/tag/v0.2.1
 [0.2.0]: https://github.com/impactRssi/agent-boundary/releases/tag/v0.2.0
 [0.1.0]: https://github.com/impactRssi/agent-boundary/releases/tag/v0.1.0
