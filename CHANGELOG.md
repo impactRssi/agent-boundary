@@ -5,6 +5,25 @@ versioning is [semantic](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Security
+
+- **A trailing DNS root label disarmed the loopback and link-local check in
+  `EgressGuard`.** `ipaddress.ip_address("169.254.169.254.")` raises, so the
+  literal test had nothing to judge and the decision fell through to the
+  allowlist comparison, which matched. An operator whose allowlist entry
+  carried the qualified spelling — a plausible copy from resolver output — had
+  a free pass to the cloud metadata endpoint and to loopback.
+
+  Present in `v0.1.0`. Reachable only through operator configuration, so it is
+  not exploitable by the adversary the threat model names on its own — but it
+  turned a control the operator believed they had into one they did not.
+
+  Found by the generated benign corpus while investigating a *false refusal*,
+  not by review and not by the injection corpus. Closed by normalising the root
+  label on both sides of the comparison before the literal check. Near-miss
+  hosts are asserted still refused, and three payloads (`A5-error-04`,
+  `A5-error-05`, `A5-html-07`) were added so it cannot return silently.
+
 ### Corrected
 
 - **The `v0.1.0` broker-overhead figure was wrong.** It was published as
@@ -13,8 +32,11 @@ versioning is [semantic](https://semver.org/spec/v2.0.0.html).
   refusals** — a shorter path that skips the approval lookup and the ledger
   debit — measured and published as the cost of *authorising* a call.
 
-  Corrected figure: **0.1309 ms mean** per authorised `fs.read`, over 5 repeats
-  of 2000 iterations, with the per-repeat spread published alongside. The
+  Corrected figure: **0.129 ms mean** per authorised `fs.read`, with the
+  per-repeat spread published alongside. It was first corrected to 0.1309 ms,
+  then re-measured at 0.129 ms after the egress fix below changed that guard's
+  cost — two moves, both named, because a single number quietly settling on its
+  final value hides which change caused which. The
   overhead loop now runs under unreachable caps, raises if any sample was
   refused, and the E2E tier asserts that flag — the defect is closed by a test,
   not by having noticed it once.
@@ -39,18 +61,30 @@ versioning is [semantic](https://semver.org/spec/v2.0.0.html).
 - Rendered trust-boundary diagram, a reproducible capture of the audit viewer,
   and an installation guide whose commands were each run against a clean clone.
 
-### Known defects found by the generated corpus, not yet fixed
+### Fixed
 
-- `EgressGuard` refuses a fully qualified host spelled with its trailing root
-  dot (`docs.internal.` against an allowlist of `docs.internal`). Same host;
-  the request would have succeeded. A real false refusal.
-- The reference catalogue declares `maxLength: 4096` for path arguments, a
-  bound the filesystem does not honour — the OS fails with `ENAMETOOLONG` and
-  the guard correctly fails closed. The schema is the defect, not the guard.
+- `EgressGuard` now authorises a host spelled with its trailing DNS root label
+  against an allowlist without it — the same host. The generated false-refusal
+  rate falls from 8/141 (5.7%) to 2/141 (1.4%).
+- The reference catalogue declared `maxLength: 4096` for path arguments, a
+  bound no filesystem honours as a single component. Now 255, derived from
+  `NAME_MAX` and asserted at test time against the running platform's
+  `pathconf`, so a port to a tighter filesystem fails CI rather than failing
+  closed at run time. **The guard is unchanged**: an unresolvable path stays
+  undecidable and undecidable stays a refusal.
 
-Both are published here before being fixed, because a defect found by a
-measurement and quietly repaired before anyone sees it makes the measurement
-look better than it was.
+Both were published as open defects before being fixed, and the rate that found
+them is published at both values. A defect found by a measurement and quietly
+repaired before anyone sees it makes the measurement look better than it was.
+
+### Still refused, deliberately
+
+An address literal carrying a trailing root label (`10.1.2.3.`) is refused
+rather than normalised. A WHATWG URL parser drops the empty final label and
+connects to `10.1.2.3`; `getaddrinfo` fails `inet_pton` on the dot and asks a
+resolver for the *name* `10.1.2.3.`. One string, two destinations — the broker
+authorises neither. That costs 2 of the 141 generated tasks, published rather
+than hidden.
 
 ## [0.1.0] — 2026-08-20
 
@@ -93,6 +127,9 @@ On the reference machine, offline, synthetic corpora — see
 - False refusals: 0/25 on a benign corpus **written by the same author as the
   controls**; read that as "no benign task the author thought of was refused".
 - Broker overhead: 0.15 ms mean, 0.47 ms p99, authorisation only.
+  **This figure was wrong** — see Unreleased → Corrected. It is left here as
+  published rather than edited, because this section records what `v0.1.0`
+  claimed, not what later turned out to be true.
 - Caps fail closed and stay closed.
 
 ### Known limitations

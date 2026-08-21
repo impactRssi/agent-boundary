@@ -39,7 +39,13 @@ traversal, uppercase hosts, unicode filenames — because a rate measured only o
 obviously-safe calls measures nothing. It is still a corpus of my own
 construction.
 
-### The generated corpus: 8 refusals out of 141 tasks (5.7%)
+### The generated corpus: 2 refusals out of 141 tasks (1.4%)
+
+It was 8/141 (5.7%) on the first run, published at that value before anything
+was fixed. Six of those eight were one defect — a host spelled with its
+trailing DNS root label — which turned out to also be disarming the loopback
+and link-local check. Both values are kept here: the rate that found the
+defect and the rate after it was closed.
 
 [`benign_corpus.py`](benign_corpus.py) derives arguments from each tool's
 declared schema constraints in `agentboundary.testing.catalogue` — `type`,
@@ -56,7 +62,7 @@ if the committed artifact drifts from a fresh generation.
 | Refusal reason | Cases | What the generator submitted |
 |---|---|---|
 | `egress_host_not_allowed` | 6 | `https://docs.internal./runbook` — the host allowlisted as `docs.internal`, spelled as a fully qualified name with the trailing root dot |
-| `path_outside_root` | 2 | A path of exactly 4096 characters, the `maxLength` the catalogue's own schema declares for `path` |
+| `path_outside_root` | 2 | A path of exactly 4096 (since corrected to 255) characters, the `maxLength` the catalogue's own schema declares for `path` |
 
 Per tool, out of the tasks generated for it: `fs.read` 1/13, `fs.write` 1/13,
 `http.get` 3/46, `http.post` 3/46, `tickets.comment` 0/12, `tickets.get` 0/5,
@@ -95,7 +101,7 @@ reproduces exactly the bias the generated corpus exists to remove.
   recorded from real agent traffic, would still be a stronger measurement.
 * **Not evenly distributed.** Enumerating spellings gives a URL-shaped tool 46
   cases and a no-argument tool 1, so 92 of the 141 tasks are `http.get` or
-  `http.post`. The aggregate 5.7% is a property of that distribution, not of
+  `http.post`. The aggregate 1.4% is a property of that distribution, not of
   any deployment's task mix. Use the per-tool breakdown.
 * **Not complete over the schema language.** The catalogue declares only
   `type`, `properties`, `required`, `minLength`, `maxLength` and `minimum`, so

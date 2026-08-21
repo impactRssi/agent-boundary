@@ -452,7 +452,7 @@ being fixed, so the measurement stands on what it actually found.
   gains admission.
 - **Tests** U · A — a corpus payload asserting the dot cannot smuggle a
   *different* host past the allowlist · E.
-- [ ] Merged
+- [x] Merged
 
 #### N-40 — Declare a path bound the filesystem honours
 - **Depends on** N-37 · **Invariant** none
@@ -462,7 +462,7 @@ being fixed, so the measurement stands on what it actually found.
   promising something unreachable is the defect. Pick a bound that holds, and
   say why in the catalogue.
 - **Tests** U · E.
-- [ ] Merged
+- [x] Merged
 
 ### C4 — Distribution · owner: technical lead
 
