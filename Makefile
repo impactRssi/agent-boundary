@@ -107,6 +107,21 @@ secrets: ## Secret scan over the full history
 # A third-party action referenced by tag is code an upstream owner can swap
 # after review, inside a job holding this repository's token. The pin is a
 # convention until something fails the build over it, so this runs in the gate.
+# GitHub validates workflow *expressions* server-side, which meant the local
+# gate could not see a syntax error in one: `join(needs.*.result, " ")` uses
+# double quotes, and GitHub expressions accept only single ones. That shipped
+# in the first CI commit and stayed invisible until the repository was
+# published, because every local check parsed the file as YAML -- which it is,
+# validly -- and none parsed the expressions inside it. The very first real CI
+# run failed in zero seconds with no jobs.
+#
+# Fails closed when actionlint is absent, same reasoning as the secret scan.
+workflows-valid: ## Fail if a workflow has a syntax or expression error
+	@command -v actionlint >/dev/null 2>&1 \
+		|| { echo "actionlint not installed -- FAILING CLOSED rather than skipping."; \
+		     echo "  brew install actionlint"; exit 1; }
+	actionlint
+
 actions-pinned: ## Fail if any workflow references an action by a movable tag
 	$(RUN) python scripts/check_action_pins.py
 

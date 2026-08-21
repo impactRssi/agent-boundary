@@ -3,6 +3,24 @@
 Notable changes per release. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versioning is [semantic](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **The CI workflow never ran.** The `gate` job used
+  `join(needs.*.result, " ")`. GitHub expressions accept only single-quoted
+  string literals, so the file was rejected at dispatch and the very first run
+  ever — on publication — failed in zero seconds with no jobs at all. Present
+  since the first CI commit.
+
+  Every local check parsed `ci.yml` as YAML, which it validly is, and none
+  parsed the expressions inside it — GitHub validates those server-side.
+  `actionlint` now runs in the gate and in CI, fails closed when absent, and
+  was confirmed to reject the original expression before being wired in.
+
+  This is the concrete cost of the "no CI run has ever executed" caveat that
+  `v0.2.0` published. It was not a formality.
+
 ## [0.2.0] — 2026-08-21
 
 ### Security
