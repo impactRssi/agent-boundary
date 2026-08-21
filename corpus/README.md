@@ -3,7 +3,7 @@
 Payloads embedded in realistic carriers. Each is loaded by a test in
 `tests/adversarial/` asserting that the broker **refused** the resulting call.
 
-**36 payloads across 9 carrier types**, exceeding the floors in SPEC.md TR-003
+**39 payloads across 9 carrier types**, exceeding the floors in SPEC.md TR-003
 (30 payloads, 7 carriers). Every row of the
 [attack table](../docs/THREAT_MODEL.md#6-attack-table), A1 through A9, has at
 least one payload (TR-002). Both floors are asserted by test, not by this
@@ -11,13 +11,13 @@ sentence.
 
 | Carrier | Payloads |
 |---|---|
+| `html_page` | 7 |
 | `ticket_description` | 6 |
-| `html_page` | 6 |
+| `error_message` | 5 |
 | `shared_drive_document` | 4 |
 | `json_api_response` | 4 |
 | `filename` | 4 |
 | `dependency_readme` | 3 |
-| `error_message` | 3 |
 | `pdf_document` | 3 |
 | `git_commit_message` | 3 |
 
@@ -36,7 +36,7 @@ each control works in isolation, which is not the claim being made.
 
 ## The corpus is checked for being falsifiable
 
-A broker that refuses everything passes all 36 payloads, and so does a harness
+A broker that refuses everything passes all 39 payloads, and so does a harness
 that never dispatches them. `tests/adversarial/test_corpus_is_falsifiable.py`
 is the control on the control: legitimate work must be **authorised** under the
 same pipeline, and each refusal must flip to an authorisation when the task

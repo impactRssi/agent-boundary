@@ -13,7 +13,7 @@ from agentboundary.confinement import (
     resolve_within,
 )
 from agentboundary.errors import RefusalReason
-from agentboundary.guards import CallContext
+from agentboundary.guards import CallContext, GuardResult
 from agentboundary.model import Caps, Irreversibility, ProposedCall, Task, Tool
 
 CAPS = Caps(max_calls=5, max_cost=10.0, max_wall_clock_s=30.0)
@@ -292,3 +292,94 @@ class TestEgressGuard:
         result = EgressGuard().check(_context({"path": "x"}, tool=HTTP_TOOL))
         assert result.passed
         assert result.detail == "no url arguments"
+
+
+def _egress(url: str, allowlist: set[str]) -> GuardResult:
+    return EgressGuard().check(_context({"url": url}, egress=frozenset(allowlist), tool=HTTP_TOOL))
+
+
+class TestEgressRootLabel:
+    """The DNS root label, on both sides of the comparison (N-39, I4).
+
+    ``docs.internal.`` is ``docs.internal`` fully qualified, and refusing it was
+    a false refusal with a real cost -- 6 of the 8 refusals the generated benign
+    corpus found. The refusals below are the reason the fix is a normalisation
+    of both sides and not a suffix rule: every one of them is a *different*
+    host that the dot must not talk its way past.
+    """
+
+    def test_a_neighbouring_registrable_name_is_still_refused(self) -> None:
+        """The classic near miss: the allowlisted name as a *prefix* of another."""
+        for host in ("docs.internal.evil.example", "docs.internal.evil.example."):
+            result = _egress(f"https://{host}/x", {"docs.internal"})
+            assert not result.passed, host
+            assert result.reason is RefusalReason.EGRESS_HOST_NOT_ALLOWED
+            assert "not allowlisted" in result.detail
+
+    def test_a_subdomain_of_the_allowlisted_name_is_still_refused(self) -> None:
+        """Qualifying it changes nothing: matching is exact, not by suffix."""
+        result = _egress("https://evil.docs.internal./x", {"docs.internal"})
+        assert not result.passed
+        assert result.reason is RefusalReason.EGRESS_HOST_NOT_ALLOWED
+
+    def test_an_empty_final_label_cannot_inherit_the_allowlist(self) -> None:
+        """``docs.internal..`` is not a name. Only one root label is ever removed."""
+        result = _egress("https://docs.internal../x", {"docs.internal"})
+        assert not result.passed
+        assert result.reason is RefusalReason.EGRESS_HOST_NOT_ALLOWED
+
+    def test_a_percent_encoded_dot_is_not_a_root_label(self) -> None:
+        """Normalisation is one defined transform, not a decoder for spellings."""
+        result = _egress("https://docs.internal%2e/x", {"docs.internal"})
+        assert not result.passed
+        assert result.reason is RefusalReason.EGRESS_HOST_NOT_ALLOWED
+
+    def test_a_root_label_in_the_userinfo_cannot_disguise_the_host(self) -> None:
+        result = _egress("https://docs.internal.@evil.example/x", {"docs.internal"})
+        assert not result.passed
+        assert "evil.example" in result.detail
+
+    def test_a_host_that_is_only_the_root_label_is_refused(self) -> None:
+        """Even allowlisted as ``.``: the root is not a destination."""
+        result = _egress("https://./x", {"."})
+        assert not result.passed
+        assert "declares no host" in result.detail
+
+    def test_an_address_literal_carrying_a_root_label_is_refused(self) -> None:
+        """A literal is not a DNS name, so the dot means whatever the client says.
+
+        A WHATWG parser drops it and connects to 10.1.2.3; ``getaddrinfo`` asks
+        a resolver for the name ``10.1.2.3.``. Two destinations, one string.
+        """
+        result = _egress("https://10.1.2.3./x", {"10.1.2.3"})
+        assert not result.passed
+        assert result.reason is RefusalReason.EGRESS_HOST_NOT_ALLOWED
+        assert "address literal" in result.detail
+
+    def test_the_root_label_cannot_disarm_the_loopback_rule(self) -> None:
+        """The bug this fix also closes.
+
+        Before normalisation, ``_as_ip('127.0.0.1.')`` returned ``None``, so an
+        allowlist written in the qualified spelling skipped the loopback and
+        link-local check entirely.
+        """
+        for host in ("127.0.0.1", "169.254.169.254"):
+            for url_host, entry in ((f"{host}.", f"{host}."), (host, f"{host}.")):
+                result = _egress(f"http://{url_host}/latest/meta-data/", {entry})
+                assert not result.passed, (url_host, entry)
+                assert result.reason is RefusalReason.EGRESS_HOST_NOT_ALLOWED
+
+    def test_the_qualified_spelling_of_an_allowlisted_host_is_authorised(self) -> None:
+        """The false refusal itself: same host, request would have succeeded."""
+        assert _egress("https://docs.internal./x", {"docs.internal"}).passed
+
+    def test_a_qualified_allowlist_entry_admits_the_unqualified_url(self) -> None:
+        """The other side of the same normalisation."""
+        assert _egress("https://docs.internal/x", {"docs.internal."}).passed
+
+    def test_both_sides_qualified_is_authorised(self) -> None:
+        assert _egress("https://DOCS.INTERNAL./x", {"docs.internal."}).passed
+
+    def test_a_routable_literal_is_unaffected(self) -> None:
+        assert _egress("https://10.1.2.3/x", {"10.1.2.3"}).passed
+        assert _egress("https://10.1.2.3/x", {"10.1.2.3."}).passed
