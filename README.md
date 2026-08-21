@@ -1,5 +1,9 @@
 # Agent Boundary
 
+[![ci](https://github.com/impactRssi/agent-boundary/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/impactRssi/agent-boundary/actions/workflows/ci.yml?query=branch%3Amain)
+[![license Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
+[![python 3.11 | 3.12 | 3.13](https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13-blue)](pyproject.toml)
+
 **Your agent has access to your internal tools. Who threat-modelled that?**
 
 Agent Boundary is a deterministic tool-call broker that sits between an LLM
