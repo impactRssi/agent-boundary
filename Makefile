@@ -40,8 +40,11 @@ test-unit: ## Unit tier
 test-adversarial: ## Adversarial tier, under the zero-collect / no-skip guard
 	$(RUN) pytest tests/adversarial --adversarial-guard
 
+# --extra mcp is stated here, not assumed from whatever happens to be in the
+# environment. The tier drives a real MCP client against a real broker
+# subprocess; without the SDK its central evidence cannot even be imported.
 test-e2e: ## End-to-end tier over a real transport
-	$(RUN) pytest tests/e2e
+	$(RUN) --extra mcp pytest tests/e2e
 
 test-gui: ## GUI tier, Playwright against the audit-trace viewer
 	$(RUN) --group gui pytest tests/gui
@@ -51,7 +54,8 @@ test-gui: ## GUI tier, Playwright against the audit-trace viewer
 # design -- measuring only unit coverage would report them as dead code and
 # push someone to write unit tests that mock the boundary under test.
 coverage: ## Full suite with the coverage floor enforced
-	$(RUN) pytest tests --adversarial-guard --cov=agentboundary --cov-report=term-missing
+	$(RUN) --group gui --extra mcp pytest tests --adversarial-guard \
+		--cov=agentboundary --cov-report=term-missing
 
 sast: ## SAST over the package. Must return zero high-severity findings
 	$(RUN) bandit -c pyproject.toml -r src -ll
@@ -90,4 +94,6 @@ check: format-check lint types test-unit test-adversarial test-e2e test-gui cove
 clean: ## Remove build and cache artifacts
 	rm -f .requirements.audit.txt
 	rm -rf build dist .pytest_cache .ruff_cache .mypy_cache htmlcov .coverage coverage.xml
+	@# Parallel-mode data files, one per measured child process (see pyproject).
+	rm -f .coverage.*
 	find . -type d -name __pycache__ -prune -exec rm -rf {} +
