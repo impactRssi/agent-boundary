@@ -33,8 +33,13 @@ Source = "https://github.com/impactRssi/agent-boundary"
 "Security policy" = "https://github.com/impactRssi/agent-boundary/blob/main/SECURITY.md"
 
 [project.optional-dependencies]
+# >=2.0, not >=1.2. The stdio adapter registers its handlers through the
+# constructor (`on_list_tools`/`on_call_tool`); the 1.x decorator form was
+# removed in 2.0, so the two are not interchangeable. The old floor claimed a
+# compatibility that would have failed on an operator's first call -- which is
+# what 0% coverage on the adapter concealed until node N-30.
 mcp = [
-    "mcp>=1.2",
+    "mcp>=2.0",
 ]
 
 [dependency-groups]
@@ -82,6 +87,13 @@ markers = [
 [tool.coverage.run]
 source = ["agentboundary"]
 branch = true
+# The E2E tier runs the broker in a real child process. Parallel mode plus
+# coverage.py's COVERAGE_PROCESS_START hook (armed in
+# tests/e2e/test_stdio_transport.py) means the child's data file is written
+# alongside the parent's and combined into the report, so the transport is
+# measured where it actually runs rather than reported as dead code.
+parallel = true
+sigterm = true
 
 [tool.coverage.report]
 show_missing = true

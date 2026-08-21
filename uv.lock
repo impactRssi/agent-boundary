@@ -32,7 +32,7 @@ gui = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "mcp", marker = "extra == 'mcp'", specifier = ">=1.2" }]
+requires-dist = [{ name = "mcp", marker = "extra == 'mcp'", specifier = ">=2.0" }]
 provides-extras = ["mcp"]
 
 [package.metadata.requires-dev]
