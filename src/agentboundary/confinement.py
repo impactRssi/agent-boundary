@@ -86,6 +86,21 @@ def _resolve_fully(path: Path) -> Path:
                     f"cannot be resolved and therefore cannot be confined"
                 )
                 raise ConfinementError(msg) from exc
+            except (OSError, RuntimeError) as exc:
+                # A symlink loop, or an unreadable parent. CPython raises
+                # OSError(ELOOP) on macOS and RuntimeError on Linux for the
+                # same loop, and only CI
+                # showed the difference. Left unnormalised, the Linux path
+                # escaped this guard entirely and was caught by the broker's
+                # catch-all, which refuses with `task_construction_failed`
+                # instead of `path_outside_root` -- a refusal reason that
+                # misreports why the call was refused, which SECURITY.md counts
+                # as a vulnerability because an operator triages on that string.
+                msg = (
+                    f"{candidate} could not be resolved ({exc}), so it cannot be "
+                    f"confined; refusing rather than proceeding on an unresolved path"
+                )
+                raise ConfinementError(msg) from exc
         else:
             current = candidate
     return current

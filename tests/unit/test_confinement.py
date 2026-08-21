@@ -101,7 +101,10 @@ class TestResolveWithin:
         root = tmp_path / "root"
         root.mkdir()
         (root / "loop").symlink_to(root / "loop")
-        with pytest.raises(OSError, match=r"[Ss]ymbolic|[Ll]oop|ELOOP"):
+        # CPython raises OSError(ELOOP) on macOS and RuntimeError on Linux for
+        # the same condition. Both are normalised to ConfinementError so the
+        # refusal reason does not depend on the platform.
+        with pytest.raises(ConfinementError, match="could not be resolved"):
             resolve_within("loop/x", root)
 
     def test_a_dangling_symlink_is_refused(self, tmp_path: Path) -> None:

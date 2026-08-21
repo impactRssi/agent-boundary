@@ -7,6 +7,17 @@ versioning is [semantic](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A symlink loop reported the wrong refusal reason on Linux.** CPython raises
+  `OSError(ELOOP)` on macOS and `RuntimeError` on Linux for the same condition.
+  `PathConfinementGuard` caught only the former, so on Linux the loop escaped
+  it and was refused by the broker's catch-all with `task_construction_failed`
+  instead of `path_outside_root`. It failed closed either way — but reported
+  the wrong control, and `SECURITY.md` counts a misreported refusal reason as a
+  vulnerability, because that string is what an operator triages on.
+
+  Found by the first CI run on Linux, in a test written and passing on macOS.
+  Both types are now normalised at the resolution boundary.
+
 - **The CI workflow never ran.** The `gate` job used
   `join(needs.*.result, " ")`. GitHub expressions accept only single-quoted
   string literals, so the file was rejected at dispatch and the very first run
