@@ -76,6 +76,15 @@ jobs:
         run: uv run ruff format --check .
       - name: Lint
         run: uv run ruff check --output-format=github .
+      # Catches what YAML parsing cannot. GitHub validates workflow expressions
+      # server-side, so a bad one is invisible locally: every check here parsed
+      # ci.yml as YAML -- which it validly is -- and none parsed the
+      # expressions inside it. That is how this file shipped with
+      # `join(needs.*.result, " ")`, which GitHub rejects because expressions
+      # take only single-quoted strings, and the first real run failed in zero
+      # seconds with no jobs at all.
+      - name: Validate workflow syntax and expressions
+        uses: raven-actions/actionlint@3d39aea434753780c3b3d4a1a31c854b4dbf49d7 # v2.2.0
       - name: Types
         run: uv run mypy
 
@@ -291,7 +300,7 @@ jobs:
       # is a check that does not gate anything.
       - name: Fail unless every upstream job succeeded
         run: |
-          results='${{ join(needs.*.result, " ") }}'
+          results="${{ join(needs.*.result, ' ') }}"
           echo "upstream results: ${results}"
           for r in ${results}; do
             if [ "$r" != "success" ]; then
