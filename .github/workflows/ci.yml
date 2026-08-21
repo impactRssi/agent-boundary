@@ -3,6 +3,12 @@
 # The adversarial suite is a SEPARATE job rather than a stage of `unit`. It has
 # to be possible to look at a commit and see whether the attack corpus passed,
 # without that answer being averaged into a general test result. See ADR-0006.
+#
+# Every `uses:` names a commit SHA, never a tag. A tag is a pointer its owner
+# can move, and moving it substitutes code inside a job that holds this
+# repository's GITHUB_TOKEN. The trailing comment records which tag the digest
+# was resolved from, so a reviewer can check the pin without leaving the diff.
+# `scripts/check_action_pins.py` fails this workflow if a tag reappears.
 
 name: ci
 
@@ -30,8 +36,8 @@ jobs:
     name: format, lint, types
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
-      - uses: astral-sh/setup-uv@v7
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
         with:
           version: ${{ env.UV_VERSION }}
           enable-cache: true
@@ -52,8 +58,8 @@ jobs:
       matrix:
         python-version: ["3.11", "3.12", "3.13"]
     steps:
-      - uses: actions/checkout@v5
-      - uses: astral-sh/setup-uv@v7
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
         with:
           version: ${{ env.UV_VERSION }}
           enable-cache: true
@@ -71,8 +77,8 @@ jobs:
     name: adversarial corpus (blocking)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
-      - uses: astral-sh/setup-uv@v7
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
         with:
           version: ${{ env.UV_VERSION }}
           enable-cache: true
@@ -104,8 +110,8 @@ jobs:
     name: end-to-end
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
-      - uses: astral-sh/setup-uv@v7
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
         with:
           version: ${{ env.UV_VERSION }}
           enable-cache: true
@@ -122,8 +128,8 @@ jobs:
     name: gui (real browser)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
-      - uses: astral-sh/setup-uv@v7
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
         with:
           version: ${{ env.UV_VERSION }}
           enable-cache: true
@@ -137,14 +143,14 @@ jobs:
         run: uv run pytest tests/gui -v
 
   security:
-    name: sast, dependency audit, secrets
+    name: sast, dependency audit, secrets, action pins
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           # gitleaks needs history in order to scan it.
           fetch-depth: 0
-      - uses: astral-sh/setup-uv@v7
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
         with:
           version: ${{ env.UV_VERSION }}
           enable-cache: true
@@ -170,9 +176,17 @@ jobs:
           uv run pip-audit --strict --require-hashes -r .requirements.audit.txt
 
       - name: Secret scan
-        uses: gitleaks/gitleaks-action@v2
+        uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2.3.9
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Runs last and gates the whole workflow through `gate`. Every step above
+      # is third-party code fetched by reference; this asserts that none of
+      # those references can be repointed by anyone but us. It fails closed on
+      # an empty workflow directory -- a pin check that examined nothing is not
+      # a pin check.
+      - name: Actions are pinned to immutable digests
+        run: uv run python scripts/check_action_pins.py
 
   gate:
     name: gate
