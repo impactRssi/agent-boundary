@@ -7,6 +7,26 @@ versioning is [semantic](https://semver.org/spec/v2.0.0.html).
 
 ### Security
 
+- **The reference MCP transport was broken, not merely untested.**
+  `agentboundary/mcp/stdio.py` used `@app.list_tools()` / `@app.call_tool()`,
+  a decorator form the MCP SDK removed in 2.0 — the version `uv.lock`
+  resolves. `mcp.server.Server` has no `call_tool` attribute at all, so
+  `run_stdio` would have raised `AttributeError` on an operator's first call.
+
+  It shipped in `v0.1.0` as "the supported way to use this", with 0% coverage
+  and no test importing it, while `tests/e2e/README.md` claimed the tier drove
+  a real broker process over the wire. Nothing crossed a wire. The `mcp` extra
+  floor moves from `>=1.2` to `>=2.0`: the two APIs are not interchangeable, so
+  the old floor claimed a compatibility that would have failed on first use.
+
+- **The adversarial guard could be defeated from the command line.** It counted
+  inside `pytest_collection_modifyitems`, which runs *before* pytest applies
+  `-k`, `-m` and `--deselect` — so it counted what was discovered, not what
+  would run. `pytest tests/adversarial --adversarial-guard -k TestCorpusCoverage`
+  deselected all 125 payloads, ran four meta-tests, and exited 0 with the guard
+  armed. Verified against `v0.1.0` before the fix. Counting moved to
+  `pytest_collection_finish`; ADR-0006 carries the amendment.
+
 - **A trailing DNS root label disarmed the loopback and link-local check in
   `EgressGuard`.** `ipaddress.ip_address("169.254.169.254.")` raises, so the
   literal test had nothing to judge and the decision fell through to the
@@ -60,6 +80,18 @@ versioning is [semantic](https://semver.org/spec/v2.0.0.html).
   authorisation; a call with no path argument costs about five times less.
 - Rendered trust-boundary diagram, a reproducible capture of the audit viewer,
   and an installation guide whose commands were each run against a clean clone.
+
+### Added (continued)
+
+- **A real transport test.** `tests/e2e/test_stdio_transport.py` launches
+  `python -m agentboundary` as a separate OS process and drives it with the
+  SDK's own client over stdio pipes — 25 tests asserting the invariants survive
+  the transport, refusals first. `stdio.py` coverage 0% → 100%, which required
+  arming subprocess coverage; without it the number would have read 25% while
+  the code was fully exercised.
+- **Collection guards on the end-to-end and GUI tiers**, not only the
+  adversarial one, each with its own flag and floor. A tier emptied for any
+  reason now fails the build instead of reporting success.
 
 ### Fixed
 
