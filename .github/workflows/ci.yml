@@ -85,6 +85,15 @@ jobs:
       # seconds with no jobs at all.
       - name: Validate workflow syntax and expressions
         uses: raven-actions/actionlint@3d39aea434753780c3b3d4a1a31c854b4dbf49d7 # v2.2.0
+        with:
+          # Expression and workflow-syntax validation only. The action's
+          # shellcheck and pyflakes extras install through pipx on the runner
+          # and that install failed; they also lint `run:` bodies, which is a
+          # different job from the one this step exists to do. Turning them off
+          # keeps the step doing exactly what the local `make workflows-valid`
+          # does, so the two cannot disagree.
+          shellcheck: false
+          pyflakes: false
       - name: Types
         run: uv run mypy
 

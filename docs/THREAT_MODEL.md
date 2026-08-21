@@ -251,7 +251,17 @@ is marketing.
     describes the token as rate-limit avoidance only, so this should hold, but
     no CI run has confirmed it — and `gate` is the required check. If the
     assumption is wrong, the failure lands on the one job that must stay green.
-12. **`dependency-review` is visible but not blocking** until branch protection
+12. **A refusal reason can be platform-dependent if an exception type is.**
+    CPython raises `OSError(ELOOP)` on macOS and `RuntimeError` on Linux for
+    the same symlink loop. Until the first CI run, only the former was caught,
+    so on Linux the condition escaped `PathConfinementGuard` and was refused by
+    the broker's catch-all with `task_construction_failed` rather than
+    `path_outside_root`. It failed closed either way, but reported the wrong
+    control — which `SECURITY.md` counts as a vulnerability, because an
+    operator triages on that string. Both are now normalised at the resolution
+    boundary. The general risk stands: a platform that raises a third type
+    would do the same thing again.
+13. **`dependency-review` is visible but not blocking** until branch protection
     lists it as a required check, which is a repository setting no file in this
     tree can assert.
 13. **Host equality is one defined normalisation, not a resolver.** The egress
