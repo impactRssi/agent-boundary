@@ -159,6 +159,31 @@ is the control on the control: legitimate work must be **authorised** under the
 same pipeline, and each refusal must flip to an authorisation when the task
 legitimately permits it.
 
+### What a refusal looks like afterwards
+
+A refusal that nobody can reconstruct is not attribution. The read-only
+audit-trace viewer, on a six-call run of the real broker — an authorised read, a
+path escape, an out-of-scope tool, an unapproved irreversible call, that same
+call once approved, and one call past the cap:
+
+![Audit-trace viewer showing six brokered calls, two authorised and four refused. Each refused record is labelled with the reason the broker recorded — path_outside_root, tool_not_in_scope, approval_mismatch, budget_exhausted — and the check that produced the refusal is highlighted inside the record.](docs/assets/audit-viewer.png)
+
+Every record carries the task id, the post-validation arguments, and the ordered
+checks with the failing one marked — which is what makes an effect attributable
+after the fact (I3). The viewer answers `GET` and `HEAD` and nothing else: there
+is no route that could edit a trace, not a guarded one.
+
+The image is generated, not drawn. Regenerate it with:
+
+```bash
+TMPDIR=/tmp uv run --group gui python scripts/capture_viewer.py
+```
+
+That script drives the real broker through the same six calls the GUI tier
+asserts on in
+[`tests/gui/test_audit_viewer.py`](tests/gui/test_audit_viewer.py). It is a
+scripted demonstration, not a measurement and not production traffic.
+
 ---
 
 ## 6. Measured results
