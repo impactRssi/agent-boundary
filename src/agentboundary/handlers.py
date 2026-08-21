@@ -95,6 +95,11 @@ def http_handlers() -> dict[str, Any]:
             headers={"User-Agent": "agent-boundary/0.1"},
         )
         try:
+            # Three scanners flag this same call shape -- ruff S310, bandit
+            # B310, semgrep dynamic-urllib-use-detected -- and each needs its
+            # own marker. One justification, three suppressions, all per-call
+            # rather than rule-wide: a new urlopen elsewhere still fails.
+            #
             # nosec B310 / noqa: S310 -- B310 warns that urlopen accepts
             # file:/ and custom schemes. It does, which is why the scheme is
             # checked above against an http/https allowlist before we get here,
@@ -102,6 +107,8 @@ def http_handlers() -> dict[str, Any]:
             # flag the call shape and neither can see either check. Reviewed
             # and accepted; the suppression is per-call, not a rule-wide
             # disable, so a new urlopen elsewhere still fails the gate.
+            # Rule: python.lang.security.audit.dynamic-urllib-use-detected
+            # nosemgrep
             with urllib.request.urlopen(  # noqa: S310
                 request, timeout=_TIMEOUT_S
             ) as response:  # nosec B310

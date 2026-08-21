@@ -86,8 +86,15 @@ guards-fail-closed: ## Prove each tier guard still fails closed on an empty tier
 	fi
 	@echo "  a tier emptied by a selection expression fails closed too."
 
+# Both scanners, because CI runs both. Running only bandit here meant a
+# semgrep finding first appeared on a runner, which is exactly the
+# local-versus-CI divergence this file is supposed to make impossible.
 sast: ## SAST over the package. Must return zero high-severity findings
 	$(RUN) bandit -c pyproject.toml -r src -ll
+	@command -v semgrep >/dev/null 2>&1 \
+		|| { echo "semgrep not installed -- FAILING CLOSED rather than skipping."; \
+		     echo "  brew install semgrep"; exit 1; }
+	semgrep --config=p/python --config=p/security-audit --error --metrics=off src/
 
 # Audits the resolved lockfile with hashes rather than the live environment.
 # The lockfile is what CI and a downstream install actually resolve, and
