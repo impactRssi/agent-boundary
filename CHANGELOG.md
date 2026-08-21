@@ -3,6 +3,30 @@
 Notable changes per release. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versioning is [semantic](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.3] — 2026-08-21
+
+**Use this one.** Same broker code as `v0.2.1`; what changed is the release
+pipeline, which took three tags to get right and is now checked rather than
+trusted.
+
+### Fixed
+
+- The release workflow built its SBOM path from the tag name (`v0.2.1`) rather
+  than the package version (`0.2.1`), and failed on the first tag that reached
+  it. It now resolves the artefact that was actually built.
+- `v0.2.2` was tagged while `pyproject.toml` still said `0.2.1`, so that
+  release carries artefacts named for a different version than the tag that
+  produced them. Nothing checked, so nothing complained. The release workflow
+  now refuses to publish when the tag and the package version disagree.
+
+### Release history, stated plainly
+
+`v0.1.0` shipped three defects. `v0.2.0` was cut before CI had ever run and its
+commit is red. `v0.2.1` is green but its release workflow failed. `v0.2.2`
+carries mislabelled artefacts. None of them is deleted or moved: the tags
+record what was actually published at each point, and a tag quietly relocated
+to a better commit is the same dishonesty as an edited benchmark.
+
 ## [0.2.1] — 2026-08-21
 
 **Use this instead of `v0.2.0`.** That tag is published but its commit does not
@@ -235,6 +259,7 @@ that accepts attacker-readable content is an exfiltration channel; there is no
 defence against a malicious operator; concurrent tasks sharing a budget pool
 are unsupported; no third-party review.
 
+[0.2.3]: https://github.com/impactRssi/agent-boundary/releases/tag/v0.2.3
 [0.2.1]: https://github.com/impactRssi/agent-boundary/releases/tag/v0.2.1
 [0.2.0]: https://github.com/impactRssi/agent-boundary/releases/tag/v0.2.0
 [0.1.0]: https://github.com/impactRssi/agent-boundary/releases/tag/v0.1.0
