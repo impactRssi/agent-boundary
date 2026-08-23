@@ -101,6 +101,82 @@ class TestNumbersCarryTheirConditions:
         assert overhead["repeat_mean_spread_ms"] >= 0
 
 
+class TestTheHarnessDoesNotIgnoreTheLeaseControl:
+    """A harness that silently drops a control its corpus exercises is measuring
+    something other than what it reports, whichever way the headline comes out."""
+
+    @staticmethod
+    def _leases() -> Any:
+        return _load().run(iterations=20)["injection_corpus"]["leases"]
+
+    def test_lease_declaring_payloads_are_judged_with_their_leases(self) -> None:
+        leases = self._leases()
+        assert leases["judged_with_the_leases_they_declare"] is True
+        assert leases["payloads_declaring_a_lease"] > 0
+        assert leases["declared_lease_kinds"]
+
+    def test_whether_the_lease_was_consulted_is_declared_not_implied(self) -> None:
+        """Either give the payloads their leases or say they were measured
+        without them. Leaving it undeclared is the one option ruled out."""
+        leases = self._leases()
+        assert set(leases) >= {
+            "judged_with_the_leases_they_declare",
+            "payloads_declaring_a_lease",
+            "payloads_declaring_no_lease",
+        }
+
+    def test_each_lease_payload_publishes_the_counterfactual(self) -> None:
+        """'A lease can only widen' is a claim about the design until the same
+        payload has been run both ways and the two reasons compared."""
+        for summary in self._leases()["payloads"]:
+            assert summary["reason_with_its_leases"]
+            assert summary["reason_with_no_lease_store"]
+            assert summary["blocked_with_its_leases"] is True
+            assert isinstance(summary["the_lease_changed_the_outcome"], bool)
+            assert all(
+                entry["state_at_lease_now"] in {"active", "expired"}
+                for entry in summary["declared_leases"]
+            )
+
+    def test_the_lease_verdict_is_pinned_to_a_fixed_instant(self) -> None:
+        """A result that depends on the date the harness ran is not a result."""
+        leases = self._leases()
+        assert "lease_now" in leases["clock"]
+        for summary in leases["payloads"]:
+            assert isinstance(summary["judged_at"], float)
+
+
+class TestTheCostOfTheLeaseCheckIsMeasured:
+    """N-43 added a lookup to two guards. An unmeasured cost is an unpublished
+    regression waiting to be found by someone else."""
+
+    @staticmethod
+    def _cost() -> Any:
+        return _load().run(iterations=20)["lease_check_cost"]
+
+    def test_both_consulting_guards_are_measured_separately(self) -> None:
+        guards = self._cost()["guards"]
+        assert set(guards) == {"path_confinement", "egress_allowlist"}
+
+    def test_each_delta_is_published_with_its_own_run_to_run_spread(self) -> None:
+        """A delta smaller than the spread of the measurement that produced it
+        is noise, and the reader has to be able to see which one it is."""
+        cost = self._cost()
+        for delta in cost["guards"].values():
+            assert len(delta["per_repeat_delta_ms"]) == cost["repeats"] >= 2
+            assert delta["delta_spread_ms"] >= 0
+            assert isinstance(delta["delta_exceeds_its_own_spread"], bool)
+            assert isinstance(delta["every_repeat_agrees_on_the_sign"], bool)
+
+    def test_the_default_deployment_is_stated_next_to_the_cost(self) -> None:
+        assert "no lease store is attached unless" in self._cost()["default_deployment"]
+
+    def test_each_call_shape_states_whether_a_store_was_attached(self) -> None:
+        scenarios = _load().run(iterations=20)["overhead_by_stage"]["scenarios"]
+        attached = {scenario["lease_store_attached"] for scenario in scenarios.values()}
+        assert attached == {True, False}
+
+
 class TestUnflatteringResultsAreNotHidden:
     def test_payloads_blocked_for_the_wrong_reason_are_reported(self) -> None:
         """A payload blocked by a different control than the one under test
