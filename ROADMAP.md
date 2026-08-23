@@ -546,7 +546,7 @@ them is wrong however convenient it is:
   steered the agent, and presenting it as a to-do list would make it one.
 - **Tests** U · A — a payload-driven refusal appears in the ledger and confers
   nothing · E.
-- [ ] Merged
+- [x] Merged
 
 #### N-42 — Leases: bounded, attributable, fail-closed
 - **Owner** Security engineer · **Depends on** N-41 · **Invariant** I3
@@ -557,7 +557,7 @@ them is wrong however convenient it is:
   expiry is unrepresentable. Leases are read from a store the agent cannot
   reach.
 - **Tests** U (expiry, boundary, absent, malformed) · A · E.
-- [ ] Merged
+- [x] Merged
 
 #### N-43 — Where a lease applies, and where it must not
 - **Owner** Security engineer · **Depends on** N-42 · **Invariant** I1, I4
@@ -572,7 +572,7 @@ them is wrong however convenient it is:
   caps bound them.
 - **Tests** U · A — a lease for one path must not authorise a sibling, a parent,
   or a traversal out of it · E.
-- [ ] Merged
+- [x] Merged
 
 #### N-44 — Rotation advice when a credential lease expires
 - **Owner** Security engineer · **Depends on** N-42 · **Invariant** none
@@ -584,7 +584,7 @@ them is wrong however convenient it is:
   Classification defaults to `credential` when unstated — the unsafe default is
   the one we refuse to make convenient, as in FR-014.
 - **Tests** U · E.
-- [ ] Merged
+- [x] Merged
 
 #### N-45 — The operator interface
 - **Owner** Broker engineer · **Depends on** N-43, N-44 · **Invariant** none
