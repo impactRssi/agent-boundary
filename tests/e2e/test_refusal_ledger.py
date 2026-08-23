@@ -7,11 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from agentboundary.ledger import (
-    FileRefusalLedger,
-    StoreWithinReachError,
-    render,
-)
+from agentboundary.confinement import StoreWithinReachError
+from agentboundary.ledger import FileRefusalLedger, render
 from agentboundary.mcp.server import build_broker, build_server
 from agentboundary.model import Caps, Task
 from agentboundary.testing.catalogue import reference_registry

@@ -20,6 +20,7 @@ from pathlib import Path
 import pytest
 
 from agentboundary import ledger as ledger_module
+from agentboundary.confinement import StoreWithinReachError, assert_out_of_reach
 from agentboundary.errors import RefusalReason
 from agentboundary.ledger import (
     MAX_SAMPLE_TASK_IDS,
@@ -29,9 +30,7 @@ from agentboundary.ledger import (
     RefusalEvent,
     RefusalLedger,
     RefusalSubject,
-    StoreWithinReachError,
     SubjectKind,
-    assert_out_of_reach,
     record_refusal,
     render,
     subject_for,
