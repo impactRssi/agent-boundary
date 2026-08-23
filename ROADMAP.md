@@ -597,7 +597,7 @@ them is wrong however convenient it is:
 - **Tests** U · E · G — leases and their remaining time are visible in the
   viewer, since an operator who cannot see what is currently granted cannot
   revoke it.
-- [ ] Merged
+- [x] Merged
 
 #### N-46 — Record the decision and its residual risk
 - **Owner** Documentation owner · **Depends on** N-45 · **Invariant** none
@@ -608,7 +608,7 @@ them is wrong however convenient it is:
   risk, and the README's Limitations gains the honest sentence — a leased path
   is an unbounded path for the duration.
 - **Tests** n/a — documentation node.
-- [ ] Merged
+- [x] Merged
 
 ---
 
