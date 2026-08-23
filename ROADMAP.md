@@ -506,6 +506,110 @@ None of the above is visible while the repository exists only on one laptop.
 - **Tests** E · **GUI** n/a.
 - [x] Merged
 
+
+---
+
+## Phase 9 — Granular, time-bounded permission leases
+
+An operator needs to widen a task's scope deliberately and temporarily: three
+days of access to a credential directory so an automation can run, then closed
+again, with a reminder that anything the agent could read for three days should
+be rotated.
+
+### The trap this phase is designed against
+
+A refusal ledger that feeds a grant workflow is **an attacker-influenced path
+into the allowlist**. The chain is short: a payload steers the agent toward a
+secret, the broker refuses, the refusal is written down, and a human later
+approves "the things the agent needed" in bulk. That is attack A3 and A9 from
+the threat model wearing a helpful interface.
+
+Every node below is constrained by three rules, and a design that breaks any of
+them is wrong however convenient it is:
+
+1. **A refusal record is data. It is never a grant, and no code path turns one
+   into permission.** There is no `--approve-all` and no
+   `--approve-from-ledger`. Granting names its subject explicitly, every time.
+2. **A grant is a lease.** Bounded in time by construction; expiry fails
+   closed. An unbounded grant must be impossible to express.
+3. **The ledger and the leases live outside every task's `fs_root`.** An agent
+   that can write its own grants has no boundary at all — the same reasoning
+   that puts the audit trace out of reach.
+
+#### N-41 — The refusal ledger, which grants nothing
+- **Owner** Security engineer · **Depends on** N-09 · **Invariant** none
+- **Exit** Every refusal is aggregated by normalised subject (tool, path, host)
+  with reason, first and last seen, count, and sample task ids. Append-only,
+  outside `fs_root`. The record carries no approval field, and the type has no
+  method that produces one. It must also state what it cannot tell a reviewer:
+  a ledger entry does not distinguish a legitimate workflow from a payload that
+  steered the agent, and presenting it as a to-do list would make it one.
+- **Tests** U · A — a payload-driven refusal appears in the ledger and confers
+  nothing · E.
+- [ ] Merged
+
+#### N-42 — Leases: bounded, attributable, fail-closed
+- **Owner** Security engineer · **Depends on** N-41 · **Invariant** I3
+- **Exit** A `Lease` carries kind (`tool` | `path` | `host`), subject,
+  `granted_by`, a **required** reason, `granted_at`, `expires_at`, and a
+  sensitivity class. An expired lease authorises nothing and the check is
+  against an injected clock so the expiry path is testable. A lease with no
+  expiry is unrepresentable. Leases are read from a store the agent cannot
+  reach.
+- **Tests** U (expiry, boundary, absent, malformed) · A · E.
+- [ ] Merged
+
+#### N-43 — Where a lease applies, and where it must not
+- **Owner** Security engineer · **Depends on** N-42 · **Invariant** I1, I4
+- **Exit** Path and host leases are consulted **at call time** by the
+  confinement guards — they widen an argument check, which is what those guards
+  do. Tool leases are resolved **at task construction time only**, because I1
+  is the property that an out-of-scope tool has no handle: a tool that appeared
+  in the dispatch table mid-session would convert I1 from a structural property
+  into a call-time filter, which is exactly what ADR-0002 rejects. The
+  consequence is stated rather than hidden: a tool lease that expires mid-task
+  keeps its handle until the task ends, so tool leases are short and the task's
+  caps bound them.
+- **Tests** U · A — a lease for one path must not authorise a sibling, a parent,
+  or a traversal out of it · E.
+- [ ] Merged
+
+#### N-44 — Rotation advice when a credential lease expires
+- **Owner** Security engineer · **Depends on** N-42 · **Invariant** none
+- **Exit** A lease over a subject classified `credential` emits, on expiry, an
+  advisory naming what was reachable and for how long. The advice is
+  unconditional: an agent that could read a production environment file for
+  three days means that file should be rotated, whether or not anything went
+  wrong, because the trace shows what was authorised and not what was inferred.
+  Classification defaults to `credential` when unstated — the unsafe default is
+  the one we refuse to make convenient, as in FR-014.
+- **Tests** U · E.
+- [ ] Merged
+
+#### N-45 — The operator interface
+- **Owner** Broker engineer · **Depends on** N-43, N-44 · **Invariant** none
+- **Exit** `agent-boundary refusals` reads the ledger; `agent-boundary lease
+  grant` creates one lease, requiring subject, duration, grantee and reason;
+  `agent-boundary lease list` shows active and expired with time remaining.
+  Granting requires the subject to be typed, never selected from an index into
+  the ledger — an index makes bulk approval one keystroke away, and approval
+  fatigue is the failure mode this phase must not manufacture.
+- **Tests** U · E · G — leases and their remaining time are visible in the
+  viewer, since an operator who cannot see what is currently granted cannot
+  revoke it.
+- [ ] Merged
+
+#### N-46 — Record the decision and its residual risk
+- **Owner** Documentation owner · **Depends on** N-45 · **Invariant** none
+- **Exit** An ADR covering why leases are time-bounded by construction, why
+  tool leases resolve at construction time while path and host leases resolve
+  at call time, and what a lease costs: during its window the invariant it
+  widens does not hold for its subject. The threat model gains the residual
+  risk, and the README's Limitations gains the honest sentence — a leased path
+  is an unbounded path for the duration.
+- **Tests** n/a — documentation node.
+- [ ] Merged
+
 ---
 
 ## Deferred, with reasons
