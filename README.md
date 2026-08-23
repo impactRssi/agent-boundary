@@ -155,7 +155,7 @@ something or nothing. The guard is shipped as
 [`agentboundary.testing.adversarial_guard`](src/agentboundary/testing/adversarial_guard.py)
 and is [itself unit-tested](tests/unit/test_adversarial_guard.py).
 
-The corpus holds **39 payloads across 9 carrier types**, and every attack-table
+The corpus holds **46 payloads across 9 carrier types**, and every attack-table
 row A1–A9 has at least one payload. Both floors are asserted by test.
 
 A corpus that only ever refuses proves nothing — a broker that refused

@@ -21,8 +21,13 @@ help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
 		| awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
 
-install: ## Create the environment and install dev dependencies
-	$(UV) sync --group dev
+# Installs what `make check` actually needs, not a subset. mypy type-checks the
+# MCP adapter and the GUI tier, so a `--group dev` install leaves `make check`
+# failing at `types` -- the first command a contributor runs contradicting the
+# second.
+install: ## Create the environment and install everything the gate needs
+	$(UV) sync --group dev --group gui --extra mcp
+	@echo "Browsers for the GUI tier: uv run playwright install chromium"
 
 format: ## Rewrite files to the canonical format
 	$(RUN) ruff format .
