@@ -276,6 +276,74 @@ is marketing.
     while `getaddrinfo` asks a resolver for that name, so one string names two
     destinations and the guard will authorise neither.
 
+14. **A permission lease is a deliberate hole, and it is the only one.** During
+    a lease's window the invariant it widens does not hold for its subject: a
+    path lease is a second root the task may reach, a host lease is one more
+    entry in the egress allowlist, a tool lease is one more handle in the
+    dispatch table. That is what the operator asked for and it is recorded with
+    their name, their stated reason and an expiry — but for the duration, a
+    leased path is an unbounded path. Nothing in the design shrinks that; the
+    levers are the class caps (7 days for `credential`, 14 for `sensitive`, 30
+    for `routine`), pinning the lease to a task id, and revoking early.
+
+15. **A tool lease that expires mid-task keeps its handle until the task ends.**
+    I1 is the property that an out-of-scope tool has no handle, so tool leases
+    resolve at task construction and a running task's dispatch table never
+    changes. Removing the handle at expiry would make I1 a call-time filter,
+    which `ADR-0002` rejects. The consequence is that a task constructed one
+    second before a tool lease expires holds that tool for its whole life,
+    bounded only by the task's caps. Tool leases should therefore be short, and
+    an operator who needs the capability gone now ends the task.
+
+16. **A lease with no `task_id` applies to every task in the deployment.** That
+    is the default, because the motivating case is an automation whose task id
+    changes on every run and a lease that had to name one would be useless for
+    it. It is also the widest thing a lease can express. Pinning the lease is
+    the narrowing lever and it is not taken by default.
+
+17. **The lease store is a file, and whoever can write it can move a
+    boundary.** The store is checked at construction against the task's own
+    `fs_root` and refused if it lies inside it, which is what stops a steered
+    agent from granting itself a lease through its own filesystem tool. It is
+    *not* checked against another task's root, against any other process on the
+    host, or against the operator's own mistakes: like the audit trace, its
+    integrity rests on the host, and host compromise is out of scope (§2). An
+    unreadable or malformed store fails closed — the guard refuses with the
+    reason the argument earned and says the store could not be read.
+
+18. **Rotation advice names what was *authorised*, not what was read.** When a
+    `credential` lease expires, an advisory is emitted unconditionally naming
+    the subject, the window, the grantee and the stated reason. It cannot say
+    whether anything was actually taken, and the trace cannot either: inside the
+    window the guards were doing exactly what the operator told them to, so a
+    clean trace is what both the legitimate case and the exfiltrated case look
+    like. The advisory says so in its own text. Rotate regardless.
+
+19. **A path lease admits anything that *resolves* into it.** A symlink inside
+    `fs_root` pointing at the leased directory is admitted, because resolution
+    happens before containment and the resolved location is inside the lease.
+    That is the correct reading of "resolve, then compare", and it is also a way
+    for content that can create a symlink in the workspace to reach the leased
+    subtree by a name the operator did not write. It reaches nothing the lease
+    did not already permit; it reaches it under a different spelling.
+
+20. **The lease duration caps are a policy choice, not a derived bound.** Seven,
+    fourteen and thirty days are numbers we picked so that "forever" cannot be
+    spelled as a large integer. They are not derived from any measurement of how
+    long a credential stays valuable, and a deployment with different exposure
+    would pick differently. What is load-bearing is that *a* cap exists and that
+    the tightest one applies to the class you get by saying nothing.
+
+21. **The refusal ledger is attacker-influenced data.** Its rows record what the
+    agent reached for, and what the agent reaches for is steerable by whoever
+    can write into its context. Nothing in the code turns a row into a grant —
+    there is no approval field, no method that produces permission, and no
+    import edge between the ledger and the lease module in either direction —
+    but the ledger is still a list an attacker can add to, and a reviewer who
+    reads it as a list of things to grant is reading it as the attacker wrote
+    it. The rendering repeats that caveat; a human who ignores it is the
+    remaining risk, and approval fatigue (A9) is not a thing code can prevent.
+
 ---
 
 ## 8. What would falsify this design
