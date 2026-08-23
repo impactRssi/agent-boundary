@@ -48,14 +48,22 @@ from agentboundary.model import (
     Tool,
 )
 from agentboundary.registry import ScopedTools, ToolRegistry
+from agentboundary.rotation import (
+    AdvisorySink,
+    FileAdvisorySink,
+    MemoryAdvisorySink,
+    RotationAdvice,
+)
 
 __all__ = [
+    "AdvisorySink",
     "Broker",
     "BrokerError",
     "CallContext",
     "Caps",
     "Check",
     "Decision",
+    "FileAdvisorySink",
     "FileLeaseStore",
     "FileRefusalLedger",
     "Guard",
@@ -67,6 +75,7 @@ __all__ = [
     "LeaseKind",
     "LeaseStore",
     "LedgerEntry",
+    "MemoryAdvisorySink",
     "MemoryRefusalLedger",
     "Outcome",
     "ProposedCall",
@@ -74,6 +83,7 @@ __all__ = [
     "RefusalLedger",
     "RefusalReason",
     "RefusalSubject",
+    "RotationAdvice",
     "ScopedTools",
     "Sensitivity",
     "StoreWithinReachError",

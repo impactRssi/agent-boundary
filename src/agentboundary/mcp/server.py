@@ -34,6 +34,7 @@ from agentboundary.leases import LeaseStore, leased_task
 from agentboundary.ledger import RefusalLedger, record_refusal
 from agentboundary.model import ProposedCall, Task
 from agentboundary.registry import ToolRegistry
+from agentboundary.rotation import AdvisorySink, emit_due
 
 __all__ = ["BrokeredServer", "ToolHandler", "build_server"]
 
@@ -174,6 +175,7 @@ def build_broker(
     approvals: ApprovalStore | None = None,
     ledger: BudgetLedger | None = None,
     leases: LeaseStore | None = None,
+    advisories: AdvisorySink | None = None,
 ) -> Broker:
     """Assemble the standard guard pipeline for a task.
 
@@ -193,6 +195,14 @@ def build_broker(
     expires mid-task keeps its handle until the task ends.
     """
     _assert_store_out_of_reach(leases, task, "lease store")
+    if leases is not None and advisories is not None:
+        # Constructing a task is the moment a deployment is definitely running,
+        # so it is the cheapest place to sweep for credential leases that have
+        # run out. Unconditional, deduplicated by lease digest, and not the only
+        # place it should happen -- an operator also runs the sweep on a
+        # schedule, because a deployment that stops constructing tasks stops
+        # noticing expiries. See agentboundary.rotation.
+        emit_due(leases, advisories)
     scoped = leased_task(task, leases)
     guards: list[Guard] = [
         PathConfinementGuard(leases=leases),
@@ -226,7 +236,9 @@ def build_server(
     audit: AuditSink | None = None,
     refusals: RefusalLedger | None = None,
     leases: LeaseStore | None = None,
+    advisories: AdvisorySink | None = None,
 ) -> BrokeredServer:
     """Build a brokered server for one task."""
-    broker = build_broker(task, registry, approvals, leases=leases)
+    _assert_store_out_of_reach(advisories, task, "rotation advisory sink")
+    broker = build_broker(task, registry, approvals, leases=leases, advisories=advisories)
     return BrokeredServer(broker, handlers, audit, refusals)
