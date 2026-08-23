@@ -39,6 +39,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import os
 import threading
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
@@ -46,7 +47,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Final
 
-from agentboundary.confinement import without_root_label
+from agentboundary.confinement import ConfinementError, resolve_candidate, without_root_label
 from agentboundary.errors import BrokerError
 from agentboundary.model import normalise_tool_name
 
@@ -107,6 +108,10 @@ class Sensitivity(str, Enum):
         return self.value
 
 
+#: The base a path lease subject is resolved against. Subjects are required to
+#: be absolute, so this satisfies the signature and anchors nothing.
+_FILESYSTEM_ROOT: Final[Path] = Path(os.sep)
+
 _DAY_S: Final[float] = 86_400.0
 
 #: The longest window each class may be granted for, in seconds.
@@ -150,7 +155,40 @@ def _normalise_subject(kind: LeaseKind, subject: str) -> str:
             f"location, because a relative one means a different directory per process."
         )
         raise LeaseError(msg)
-    return stripped
+
+    # Resolved here, at construction, and stored resolved. Two reasons.
+    #
+    # It makes the check below correct. "Is this subject the filesystem root" is
+    # a question about a location, not about a spelling: `/x/..` is the root and
+    # so is `/x` when `/x` is a symlink to it. A lexical test answers neither,
+    # and this module does not pattern-match paths.
+    #
+    # And it makes the stored subject the same canonical form the guard compares
+    # against, so `_admitting_lease` re-resolving it is a no-op rather than a
+    # second opinion. `FileLeaseStore` re-reads on every lookup, so a symlink
+    # repointed after a grant is picked up on the next call, not cached forever.
+    try:
+        resolved = resolve_candidate(stripped, _FILESYSTEM_ROOT)
+    except (ConfinementError, OSError) as exc:
+        msg = (
+            f"path lease subject {subject!r} could not be resolved ({exc}), so what it "
+            f"grants is undecidable; refusing rather than granting an unknown location"
+        )
+        raise LeaseError(msg) from exc
+
+    if len(resolved.parts) <= 1:
+        # A lease over the filesystem root is not a widening of I4, it is the
+        # removal of it, expressed in a form that expires and is therefore easy
+        # to grant and forget. It also buys nothing an operator cannot already
+        # say: a task that genuinely needs the whole filesystem sets `fs_root`
+        # to it, in the task construction, where a reviewer looks.
+        msg = (
+            f"path lease subject {subject!r} resolves to the filesystem root. A lease over "
+            f"the root does not widen confinement, it removes it; set the task's fs_root "
+            f"instead, where the decision is visible and not on a timer."
+        )
+        raise LeaseError(msg)
+    return str(resolved)
 
 
 @dataclass(frozen=True, slots=True)

@@ -250,6 +250,16 @@ class TestSubjectNormalisationMatchesTheCheckItWidens:
         with pytest.raises(LeaseError, match="must name a subject"):
             _lease(subject="   ")
 
+    @pytest.mark.parametrize("root", ["/", "//", "/.", "/x/.."], ids=str)
+    def test_a_lease_over_the_filesystem_root_is_refused(self, root: str) -> None:
+        """A lease over the root does not widen confinement, it removes it."""
+        with pytest.raises(LeaseError, match="filesystem root"):
+            _lease(subject=root)
+
+    def test_a_lease_one_level_below_the_root_is_allowed(self) -> None:
+        """The bound is the root itself, not a general aversion to short paths."""
+        assert _lease(subject="/srv").subject == "/srv"
+
     def test_a_host_subject_is_lowercased_and_loses_its_root_label(self) -> None:
         lease = _lease(kind=LeaseKind.HOST, subject="Docs.Internal.")
         assert lease.subject == "docs.internal"
