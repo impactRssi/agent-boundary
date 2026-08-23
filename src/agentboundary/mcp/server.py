@@ -20,6 +20,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from agentboundary.approval import ApprovalGuard, ApprovalStore
@@ -29,6 +30,7 @@ from agentboundary.budget import BudgetGuard, BudgetLedger
 from agentboundary.confinement import EgressGuard, PathConfinementGuard
 from agentboundary.guards import Guard
 from agentboundary.ingest import Envelope, ingest
+from agentboundary.ledger import RefusalLedger, assert_out_of_reach, record_refusal
 from agentboundary.model import ProposedCall, Task
 from agentboundary.registry import ToolRegistry
 
@@ -59,13 +61,14 @@ class BrokeredServer:
     weaker authorisation path.
     """
 
-    __slots__ = ("_audit", "_broker", "_handlers", "_sequence")
+    __slots__ = ("_audit", "_broker", "_handlers", "_refusals", "_sequence")
 
     def __init__(
         self,
         broker: Broker,
         handlers: Mapping[str, ToolHandler],
         audit: AuditSink | None = None,
+        refusals: RefusalLedger | None = None,
     ) -> None:
         missing = sorted(set(broker.scoped_tools.names()) - set(handlers))
         if missing:
@@ -81,11 +84,21 @@ class BrokeredServer:
         # sink -- sending the whole trace to a throwaway. An audit trace that
         # quietly goes nowhere is the worst possible instance of this bug.
         self._audit = audit if audit is not None else MemoryAuditSink()
+        # Optional, and `None` means "no ledger" rather than "a throwaway one".
+        # A refusal ledger is an operator artifact: silently substituting an
+        # in-process one would report an empty ledger to whoever went looking.
+        if refusals is not None:
+            _assert_ledger_out_of_reach(refusals, broker.task)
+        self._refusals = refusals
         self._sequence = 0
 
     @property
     def audit(self) -> AuditSink:
         return self._audit
+
+    @property
+    def refusals(self) -> RefusalLedger | None:
+        return self._refusals
 
     @property
     def task(self) -> Task:
@@ -105,6 +118,11 @@ class BrokeredServer:
             self._audit.append(
                 AuditRecord.from_decision(self.task, proposed, decision, self._sequence)
             )
+            if self._refusals is not None:
+                # Recorded, and that is all. Nothing downstream of this call
+                # can turn the entry into permission -- see the trap described
+                # in agentboundary.ledger.
+                record_refusal(self._refusals, self.task, proposed, decision)
             reason = str(decision.reason) if decision.reason else None
             return CallOutcome(
                 authorised=False,
@@ -169,12 +187,26 @@ def build_broker(
     return Broker(task, registry.scope_for(task), guards)
 
 
+def _assert_ledger_out_of_reach(refusals: RefusalLedger, task: Task) -> None:
+    """Refuse to attach a ledger the task's own tools could write.
+
+    Checked by asking the ledger where it lives rather than by testing its
+    concrete type, so a deployment's own file-backed implementation is held to
+    the same rule as :class:`~agentboundary.ledger.FileRefusalLedger`. A ledger
+    that keeps nothing on disk exposes no ``path`` and has nothing to check.
+    """
+    location = getattr(refusals, "path", None)
+    if isinstance(location, Path):
+        assert_out_of_reach(location, task.fs_root, "refusal ledger")
+
+
 def build_server(
     task: Task,
     registry: ToolRegistry,
     handlers: Mapping[str, ToolHandler],
     approvals: ApprovalStore | None = None,
     audit: AuditSink | None = None,
+    refusals: RefusalLedger | None = None,
 ) -> BrokeredServer:
     """Build a brokered server for one task."""
-    return BrokeredServer(build_broker(task, registry, approvals), handlers, audit)
+    return BrokeredServer(build_broker(task, registry, approvals), handlers, audit, refusals)
