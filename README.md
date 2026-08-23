@@ -406,7 +406,7 @@ than the drift between two separately-timed runs on a laptop.
   (+0.00083, +0.00098, +0.00096, +0.00103, +0.00088 ms) and about 4.7× its own
   spread. Attaching an in-memory store holding two leases raises the egress
   stage of an authorised `http.get` from 0.00487 ms to 0.00581 ms, a 19%
-  increase on that stage and about 4% of the 0.0213 ms an authorised `http.get`
+  increase on that stage and 4.4% of the 0.0213 ms an authorised `http.get`
   costs end to end, both measured at load average 3.8 over 5×2000 paired
   iterations. The guard reads the store on every URL argument, so a call
   carrying a URL pays for the lookup whether or not any lease of the operator's
