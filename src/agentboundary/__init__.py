@@ -15,8 +15,28 @@ hostile; see ``docs/THREAT_MODEL.md``.
 """
 
 from agentboundary.broker import Broker
+from agentboundary.confinement import StoreWithinReachError
 from agentboundary.errors import BrokerError, RefusalReason, TaskConstructionError
 from agentboundary.guards import CallContext, Guard, GuardResult
+from agentboundary.leases import (
+    FileLeaseStore,
+    InMemoryLeaseStore,
+    Lease,
+    LeaseError,
+    LeaseKind,
+    LeaseStore,
+    Sensitivity,
+    leased_task,
+)
+from agentboundary.ledger import (
+    FileRefusalLedger,
+    LedgerEntry,
+    MemoryRefusalLedger,
+    RefusalEvent,
+    RefusalLedger,
+    RefusalSubject,
+    SubjectKind,
+)
 from agentboundary.model import (
     Caps,
     Check,
@@ -28,26 +48,52 @@ from agentboundary.model import (
     Tool,
 )
 from agentboundary.registry import ScopedTools, ToolRegistry
+from agentboundary.rotation import (
+    AdvisorySink,
+    FileAdvisorySink,
+    MemoryAdvisorySink,
+    RotationAdvice,
+)
 
 __all__ = [
+    "AdvisorySink",
     "Broker",
     "BrokerError",
     "CallContext",
     "Caps",
     "Check",
     "Decision",
+    "FileAdvisorySink",
+    "FileLeaseStore",
+    "FileRefusalLedger",
     "Guard",
     "GuardResult",
+    "InMemoryLeaseStore",
     "Irreversibility",
+    "Lease",
+    "LeaseError",
+    "LeaseKind",
+    "LeaseStore",
+    "LedgerEntry",
+    "MemoryAdvisorySink",
+    "MemoryRefusalLedger",
     "Outcome",
     "ProposedCall",
+    "RefusalEvent",
+    "RefusalLedger",
     "RefusalReason",
+    "RefusalSubject",
+    "RotationAdvice",
     "ScopedTools",
+    "Sensitivity",
+    "StoreWithinReachError",
+    "SubjectKind",
     "Task",
     "TaskConstructionError",
     "Tool",
     "ToolRegistry",
     "__version__",
+    "leased_task",
 ]
 
-__version__ = "0.2.3"
+__version__ = "0.3.0"

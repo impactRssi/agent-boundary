@@ -13,6 +13,38 @@ uv run python benchmarks/benign_corpus.py --write   # regenerate the benign corp
 Latest committed run: [`results.json`](results.json). The measured figures are
 reproduced in the [README](../README.md#6-measured-results) with their caveats.
 
+## The lease store, and what the harness does with it
+
+Six of the 46 injection payloads declare a permission lease the operator had
+already granted when the payload arrived. **They are judged with those leases**,
+through `agentboundary.testing.broker_for` — the same pipeline assembly the
+adversarial tier and `mcp.server.build_broker` use.
+
+Until the run recorded in the current `results.json`, they were not. The harness
+built its own pipeline with **no lease store**, so a payload declaring a lease
+was measured without the control it exists to exercise. The block rate was
+unaffected, which is why it went unnoticed: a lease can only widen, and every
+one of those six is refused either way. That is not a reason to leave it — a
+harness that silently drops a control its corpus exercises reports a number
+about a system nobody runs.
+
+Rather than assert "a lease can only widen", the harness now measures it. Each
+lease-declaring payload is run twice, once with the store its declaration builds
+and once with none, and both refusal reasons are recorded in `results.json`
+under `injection_corpus.leases.payloads`. In the committed run all six produce
+the identical reason both ways, and `outcome_changed_by_a_lease` is empty.
+
+Every lease-declaring payload pins its own instant (`lease_now`), so whether a
+lease is live is a property of the corpus and not of the date the harness ran.
+Four of the six are live at their instant and two have expired by it; an expired
+lease widening nothing is as much of a result as a live one failing to admit a
+neighbouring subject.
+
+Everything else the harness measures — both benign corpora, the headline
+overhead, the per-stage breakdown, the cap behaviour — runs with **no lease
+store attached**, because that is the default deployment. The one place a store
+is attached deliberately is the paired A/B measurement below.
+
 ## The false-refusal rate — read this section before the number
 
 The false-refusal rate is the control's cost. It is reported against **two
@@ -22,10 +54,14 @@ chose the cases, and one combined figure would hide exactly that.
 | Corpus | Tasks | Falsely refused | Who chose the cases |
 |---|---|---|---|
 | Hand-written ([`benign/tasks.json`](benign/tasks.json)) | 25 | **0** | The author of the controls, knowing what each guard checks |
-| Generated ([`benign/generated.json`](benign/generated.json)) | 141 | **8** | Nobody — derived from the declared schema constraints at seed `0xb0157a11` |
+| Generated ([`benign/generated.json`](benign/generated.json)) | 141 | **2** now, **8** on the first run | Nobody — derived from the declared schema constraints at seed `0xb0157a11` |
+
+Both values of the generated figure are kept: the 8 that found two defects, and
+the 2 that remain after both were closed. Deleting the first because the second
+is smaller is the failure mode this file exists to prevent.
 
 Both figures were measured on Python 3.13.13 on Darwin/arm64, offline, single
-process. Both corpora are **synthetic**.
+process, with no lease store attached. Both corpora are **synthetic**.
 
 ### The hand-written corpus: 0 refusals out of 25 tasks
 
@@ -67,6 +103,16 @@ if the committed artifact drifts from a fresh generation.
 Per tool, out of the tasks generated for it: `fs.read` 1/13, `fs.write` 1/13,
 `http.get` 3/46, `http.post` 3/46, `tickets.comment` 0/12, `tickets.get` 0/5,
 `tickets.delete` 0/5, `tickets.list` 0/1.
+
+**Where the path-length class went.** The catalogue's `maxLength` for `path` is
+now 255, so the corpus regenerates `path=at-the-declared-maxLength` at 255
+characters instead of 4096. Both of those tasks — `generated-013` on `fs.read`
+and `generated-026` on `fs.write` — are authorised in the current run, and the
+2 `path_outside_root` refusals that class produced are gone. The rate did not
+move as a result: it was already 2 out of 141 tasks before this re-measurement,
+and the 2 that remain are the address-literal class, which has nothing to do
+with path length. Per tool in the current run: `http.get` 1/46, `http.post`
+1/46, and 0 refused out of the tasks generated for every other tool.
 
 Reading the two classes honestly, because they do not cost the same:
 
@@ -119,32 +165,72 @@ does real work depends on the arguments: a path argument exercises confinement
 and leaves the egress check with nothing to do, and the reverse.
 
 Milliseconds per call, 2000 iterations per shape, Python 3.13.13 on Darwin/arm64
-(Mac15,6, 12 logical CPUs, load average 9.02 during the run), offline, all four
-shapes authorised end to end so every stage runs:
+(Mac15,6, Apple M3 Pro, 12 logical CPUs, load average 3.8 during the run),
+offline, no lease store attached, all shapes authorised end to end so every
+stage runs:
 
 | Stage | `fs.read` | `fs.write` (approved) | `http.get` | `tickets.get` |
 |---|---|---|---|---|
-| Scope resolution | 0.00013 | 0.00013 | 0.00013 | 0.00013 |
-| Schema validation | 0.00317 | 0.00421 | 0.00329 | 0.00324 |
-| Path confinement | 0.10154 | 0.11369 | 0.00085 | 0.00090 |
-| Egress allowlist | 0.00103 | 0.00114 | 0.00455 | 0.00081 |
-| Budget accounting | 0.00552 | 0.00594 | 0.00434 | 0.00453 |
-| Approval lookup | 0.00147 | 0.00720 | 0.00112 | 0.00114 |
-| Unattributed | 0.01450 | 0.01960 | 0.01290 | 0.01200 |
-| **Total** | **0.1273** | **0.1519** | **0.0271** | **0.0227** |
+| Scope resolution | 0.00010 | 0.00011 | 0.00009 | 0.00010 |
+| Schema validation | 0.00237 | 0.00337 | 0.00229 | 0.00240 |
+| Path confinement | 0.08431 | 0.09284 | 0.00063 | 0.00061 |
+| Egress allowlist | 0.00076 | 0.00085 | 0.00498 | 0.00057 |
+| Budget accounting | 0.00401 | 0.00431 | 0.00312 | 0.00302 |
+| Approval lookup | 0.00106 | 0.00529 | 0.00078 | 0.00074 |
+| Unattributed | 0.01380 | 0.01140 | 0.00940 | 0.00890 |
+| **Total** | **0.1065** | **0.1182** | **0.0213** | **0.0163** |
 
-Path confinement is 80% of the cost of authorising an `fs.read`, and that is
-the expected shape rather than a defect: confinement resolves the path one
-component at a time against the filesystem instead of pattern-matching it,
-which is exactly the property I4 rests on. Budget accounting is charged twice
-per authorised call — consult, then debit — and both halves are counted here.
+**The previous run of this table is kept in git, not restated here as a
+comparison, because it is not one.** It was taken on the same machine at load
+average 9.02; this one at 3.8. Every figure moved down and none of it is an
+improvement to the broker — nothing on the authorisation path changed between
+the two runs. Comparing timing across two runs at different loads is the error
+the load average is recorded to prevent.
 
-Caveats that belong next to those numbers:
+Path confinement is 79% of the cost of authorising an `fs.read` at load
+average 3.8, and that is the expected shape rather than a defect: confinement
+resolves the path one component at a time against the filesystem instead of
+pattern-matching it, which is exactly the property I4 rests on. Budget
+accounting is charged twice per authorised call — consult, then debit — and both
+halves are counted here.
 
-* Each guard figure includes one `perf_counter` pair, measured at 0.00009 ms on
-  this machine, so each is an upper bound.
+### What attaching a lease store costs, paired A/B
+
+Permission leases added a lookup to `PathConfinementGuard` and `EgressGuard`.
+Measured as a **paired difference**, alternating the two pipelines inside each
+repeat, over 5 repeats of 2000 iterations, at load average 3.8, against an
+in-memory store holding two leases:
+
+| Guard | Call shape | Without a store | With a store | Mean delta | Spread of the delta | Larger than its own spread |
+|---|---|---|---|---|---|---|
+| Path confinement | `fs.read`, path inside the root | 0.08276 | 0.08288 | +0.00012 | 0.00605 | No |
+| Egress allowlist | `http.get`, allowlisted host | 0.00487 | 0.00581 | +0.00094 | 0.00020 | Yes |
+
+Paired and alternated because the difference being looked for is smaller than
+the drift between two separately-timed runs on a laptop; comparing one leased
+figure against one unleased figure would report that drift as the price of a
+feature. Every repeat's delta is published, not only their mean: path
+confinement's five deltas were −0.00031, +0.00301, +0.00153, −0.00057 and
+−0.00304 ms — a sign that flips, which is what noise looks like — while egress's
+were +0.00083, +0.00098, +0.00096, +0.00103 and +0.00088 ms.
+
+The asymmetry is structural, not a measurement artefact. The path guard consults
+the store only after a path has already fallen outside the root, so a call
+authorised by the root never reads it; the egress guard reads the store on every
+URL argument, so a call carrying a URL pays for the lookup whether or not any
+lease applies. Two figures, therefore, and never one.
+
+A store that is not attached costs nothing, and not attaching one is the
+default. A `FileLeaseStore` re-reads and re-parses its file on every lookup and
+will cost more than the in-memory store measured here; that is **not yet
+measured**, and no number for it should be quoted until it is.
+
+Caveats that belong next to the per-stage table and the lease deltas alike:
+
+* Each guard figure includes one `perf_counter` pair, measured at 0.00007 ms on
+  this machine during this run, so each is an upper bound.
 * Scope resolution sits at that instrument floor. Its figure means "too cheap
-  to measure this way", not "0.00013 ms".
+  to measure this way", not "0.00010 ms".
 * The unattributed row is guard dispatch, one `Check` record per stage and
   building the `Decision`. It is published rather than folded into a stage
   because it also absorbs the measurement error — a small negative value there
@@ -166,9 +252,10 @@ as the per-call cost of authorisation. The overhead loop now runs under caps it
 cannot reach, the harness raises if any sample comes back refused, and the E2E
 tier asserts the flag that says so.
 
-Run-to-run spread is published with the headline for the same reason: five
-repeats of 2000 iterations gave means of 0.1255, 0.1309, 0.1287, 0.1391 and
-0.1304 ms. A single mean on a laptop reads as more precise than it is.
+Run-to-run spread is published with the headline for the same reason: in the
+current run, five repeats of 2000 iterations at load average 3.8 gave means of
+0.1063, 0.1064, 0.1041, 0.1027 and 0.1014 ms, a spread of 0.005 ms. A single
+mean on a laptop reads as more precise than it is.
 
 ## Rules
 

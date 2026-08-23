@@ -1,10 +1,15 @@
-# Specification — Agent Boundary v0.1.0
+# Specification — Agent Boundary
 
 Normative specification for the tool-call broker. Requirement keywords MUST,
 MUST NOT, SHOULD, and MAY are used in the RFC 2119 sense.
 
 Derived from `docs/THREAT_MODEL.md`. Every requirement below traces to one of
 the four structural invariants (I1–I4) or to an accepted decision record.
+
+§7 and §8 are the acceptance criteria and stated limitations of `v0.1.0` and
+are kept as that release's record. The current limitations live in
+`docs/THREAT_MODEL.md` §7 and in the README's Limitations section, which are
+the two that stay up to date.
 
 ---
 
@@ -16,7 +21,8 @@ consulting a model.
 
 **In scope:** per-task tool scoping, argument schema validation, filesystem and
 egress confinement, budget accounting, irreversibility gating, ingest of tool
-results, and an append-only audit trace.
+results, an append-only audit trace, an append-only refusal ledger, and
+operator-granted permission leases that are bounded in time by construction.
 
 **Out of scope:** defending against a malicious operator, constraining what a
 permitted tool does internally, host compromise, and any claim about model
@@ -61,6 +67,9 @@ no model, and takes no input from the agent's context.
 | `AuditRecord` | `task_id`, `tool_name`, `validated_args`, `decision`, `result_status`, `timestamps` | Append-only |
 | `ApprovalRecord` | `task_id`, `tool_name`, `arg_digest`, `granted_by`, `expires_at` | Out-of-band. Never constructible from context |
 | `Caps` | `max_calls`, `max_cost`, `max_wall_clock_s` | Per task |
+| `Lease` | `kind`, `subject`, `granted_by`, `reason`, `granted_at`, `expires_at`, `sensitivity`, `task_id` | Immutable. `kind` ∈ `tool` \| `path` \| `host`; `sensitivity` ∈ `credential` \| `sensitive` \| `routine`. `expires_at` has no default and no value of it means "never" |
+| `LedgerEntry` | `subject_kind`, `subject`, `resolved`, `reason`, `first_seen`, `last_seen`, `count`, `sample_task_ids` | Evidence about the past. Carries no approval field and no method that produces one |
+| `RotationAdvice` | `lease_digest`, `kind`, `subject`, `granted_by`, `reason`, `granted_at`, `expires_at`, `task_id` | Emitted on expiry of a `credential` lease, unconditionally |
 
 ### Refusal reasons
 
@@ -164,6 +173,79 @@ Machine-readable and stable; they are part of the interface.
 - **FR-026** A worked example MUST wire an agent to a filesystem tool, an HTTP
   tool, and a ticketing tool.
 
+### 4.10 Permission leases — I1, I3, I4
+
+A lease is the one mechanism that makes an invariant hold *less* than it did,
+for one subject and for a bounded period. The requirements below exist to bound
+that. Rationale and rejected options: `ADR-0008`.
+
+- **FR-027** A lease MUST carry a kind, a subject, `granted_by`, a reason,
+  `granted_at`, `expires_at`, and a sensitivity class. Every one of them MUST
+  be required; an empty `granted_by` or reason MUST be refused at construction,
+  because an unattributable or unexplained widening is not reviewable.
+- **FR-028** A lease with no expiry MUST be unrepresentable. `expires_at` MUST
+  have no default, non-finite values MUST be refused, and `expires_at` MUST be
+  strictly after `granted_at`. An absent `expires_at` in a stored record MUST
+  be an error and MUST NOT become a default, a sentinel, or a long window.
+- **FR-029** The window MUST be capped per sensitivity class — 7 days for
+  `credential`, 14 for `sensitive`, 30 for `routine` — and a lease exceeding
+  its class cap MUST be refused at construction. Without a cap, "forever" is
+  expressible as a large integer, which defeats FR-028.
+- **FR-030** An unstated sensitivity class MUST default to `credential`, the
+  class with the shortest cap and the mandatory rotation advisory. An
+  unrecognised class MUST be refused and MUST NOT be silently downgraded. Same
+  reasoning as FR-014: the unsafe default is the one that is not convenient.
+- **FR-031** An expired lease MUST authorise nothing. The active window MUST be
+  half-open — from `granted_at` inclusive to `expires_at` exclusive — and the
+  clock MUST be injectable so the expiry path is testable without waiting.
+- **FR-032** Path and host leases MUST be consulted **at call time** by the
+  confinement guards, and MUST widen only the single check they attach to. A
+  path lease MUST be admitted by the same resolution and containment test used
+  for `fs_root` under FR-009, never by pattern matching. A host lease MUST
+  widen only the allowlist membership test and MUST NOT relax the scheme
+  allowlist, the hostless-URL refusal, the address-literal root-label refusal,
+  or the loopback and link-local refusals.
+- **FR-033** Tool leases MUST be resolved **at task construction time only**,
+  producing a new immutable task. A running task's dispatch table MUST NOT
+  change, because I1 is the property that an out-of-scope tool has no handle
+  and a call-time dispatch filter is what `ADR-0002` rejects. The consequence
+  MUST be stated rather than mitigated: a tool lease that expires mid-task
+  keeps its handle until the task ends.
+- **FR-034** A leased tool absent from the registry MUST fail task construction
+  under FR-003. A lease MUST NOT create a capability the deployment never
+  registered.
+- **FR-035** A path lease whose subject resolves to the filesystem root MUST be
+  refused. That is not a widening of I4 but its removal, on a timer.
+- **FR-036** No component reachable from the agent loop MAY create a lease. The
+  lease store MUST expose no grant operation, and leases MUST arrive already
+  written from an operator channel.
+- **FR-037** The lease store, the refusal ledger, and the rotation advisory
+  sink MUST each be refused at construction if they lie inside the task's
+  `fs_root`. A store that cannot be read or parsed MUST fail closed and MUST
+  NOT resolve to "no leases", which an operator would misread as an expiry.
+- **FR-038** Every refused call MUST be recordable in an append-only refusal
+  ledger, aggregated by normalised subject and reason with first seen, last
+  seen, count, and a bounded sample of task ids.
+- **FR-039** No ledger type MAY carry an approval field or expose a method that
+  produces permission, and no import edge MAY exist between the ledger and the
+  lease module in either direction. Granting MUST name its subject explicitly
+  and MUST NOT be derived from, or indexed into, the ledger — a ledger row is
+  attacker-influenced data, and an index into it makes bulk approval one
+  keystroke away (A3, A9).
+- **FR-040** Every rendering of the ledger MUST carry, in its own output, the
+  statement that a row cannot distinguish a legitimate workflow from a payload
+  that steered the agent.
+- **FR-041** An expired `credential`-class lease MUST produce a rotation
+  advisory naming the subject, the window, the grantee, and the stated reason.
+  Emission MUST be unconditional and MUST NOT depend on the audit trace looking
+  clean: the trace records what was *authorised*, not what was *read*. The
+  advisory MUST state that limit in its own text, and MUST be deduplicated by
+  lease digest so that unconditional does not mean repeated.
+- **FR-042** Leases MUST NOT introduce a refusal reason. A call a lease did not
+  admit MUST refuse with `path_outside_root` or `egress_host_not_allowed` as it
+  would have without one; whether a lease was consulted belongs in the check
+  detail, so the machine-readable interface does not shift under an operator.
+
 ---
 
 ## 5. Non-functional requirements
@@ -197,6 +279,17 @@ adversarial subset.
 | 4.7 Audit | ✔ | — | ✔ | ✔ |
 | 4.8 Isolation | ✔ | ✔ | — | — |
 | 4.9 Packaging | — | — | ✔ | — |
+| 4.10 Permission leases | ✔ | ✔ | ✔ | — |
+
+The GUI cell for 4.10 is empty because it is true, not because the row is
+pending: at time of writing the audit-trace viewer has no lease surface, so
+there is nothing for a browser test to assert. Unit coverage is
+`tests/unit/test_leases.py`, `tests/unit/test_lease_application.py`,
+`tests/unit/test_ledger.py`, and `tests/unit/test_rotation.py`; adversarial is
+`tests/adversarial/test_leases_are_not_forgeable.py` and
+`tests/adversarial/test_refusal_ledger_confers_nothing.py`; end-to-end is
+`tests/e2e/test_lease_store.py`, `tests/e2e/test_lease_application.py`,
+`tests/e2e/test_refusal_ledger.py`, and `tests/e2e/test_rotation_advice.py`.
 
 **TR-001** The adversarial, end-to-end, and GUI suites MUST each fail the build
 if they run zero tests or skip one. The count MUST be taken after selection,

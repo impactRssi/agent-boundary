@@ -3,6 +3,97 @@
 Notable changes per release. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versioning is [semantic](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] — 2026-08-23
+
+**This release adds a mechanism that deliberately widens the invariants.** That
+is the point of it and it is the first thing to say. A permission lease lets an
+operator open a hole on purpose — three days of access to a credential
+directory so an automation can run — and while that lease is in force, the
+invariant it widens **does not hold for its subject**. Everything below is
+about making that hole bounded, attributable, and visible rather than
+pretending it is not a hole.
+
+### Added — permission leases
+
+- **Leases bounded by construction, not by policy.** A lease carries kind
+  (`tool`/`path`/`host`), subject, grantee, a required reason, and an expiry.
+  An unbounded lease is *unrepresentable*: `expires_at` has no default, `inf`
+  and `nan` are refused, and a per-class maximum duration caps it — credential
+  7 days, sensitive 14, routine 30. The cap is the actual teeth. Without one,
+  "forever" is just a large integer and nothing objects. Only the 7-day figure
+  has a stated derivation; 14 and 30 are ordering choices and `ADR-0008` says
+  so rather than inventing a rationale.
+- **Path and host leases resolve at call time; tool leases resolve at task
+  construction time.** This asymmetry is load-bearing. I1 is the property that
+  an out-of-scope tool has *no handle*, and a tool appearing in the dispatch
+  table mid-session would convert I1 into a call-time filter — which is what
+  `ADR-0002` exists to reject. The consequence is stated, not mitigated: a tool
+  lease that expires mid-task keeps its handle until the task ends.
+- **A refusal ledger that grants nothing.** Refusals are aggregated by subject
+  with reason, count, and first/last seen. The record type has no approval
+  field and no method that produces one. It renders its own caveat every time:
+  a ledger entry cannot distinguish a legitimate workflow from a payload that
+  steered the agent.
+- **An operator interface where bulk approval is unrepresentable**, not merely
+  absent. No option accumulates or takes multiple values; no signature accepts
+  a sequence; no module holds both a refusal and a lease in scope, so
+  "promote this row" cannot be written as a local change; and `refusals` prints
+  no row number, id, or digest to select by. `LeaseStore` has no `grant` — the
+  CLI writes the file out of band, and no `agentboundary.operator` module loads
+  in a serving process.
+- **Unconditional rotation advice** when a credential lease expires. The audit
+  trace records what was *authorised*, not what was *read*, so "nothing looked
+  wrong" is not evidence.
+- Leases, lapses and owed rotations are visible in the audit viewer. An
+  operator who cannot see what is granted cannot revoke it.
+
+### Fixed
+
+- `build_from_config` selected handlers from the unleased scope while
+  `build_server` widened it, so a tool lease killed the entry point by naming
+  the tool the operator had just granted. The serve banner now prints the
+  server's real scope, so a tool lease cannot make it understate what the agent
+  holds.
+- `LeaseKind` subclasses `str`, so `"path" == LeaseKind.PATH` is true while the
+  guards dispatch on identity. A lease built with a string kind was accepted,
+  stored, reported as active — and applied to nothing. It failed closed, which
+  is what made it dangerous: an operator who granted access, saw the call
+  refused anyway, and concluded the lease was too narrow would reach for a
+  broader one.
+
+### Measured
+
+Offline, synthetic corpora, Python 3.13 on Darwin/arm64 at load average 3.8 —
+see [`benchmarks/results.json`](benchmarks/results.json). **Timings are not
+comparable with `v0.2.x`**, which was measured at load average 9.02; nothing on
+the authorisation path changed between the runs.
+
+- Injection corpus: **46/46** blocked across 9 carriers, rows A1–A9,
+  0 blocked by a control other than the one under test.
+- **The harness now measures the counterfactual instead of asserting it.** Six
+  payloads declare a lease; each is run again with no store attached and the
+  refusal reasons compared. All six refuse identically either way — "a lease
+  can only widen" is now a measurement.
+- False refusals: **0/25** hand-written, **2/141** generated. Both synthetic;
+  the hand-written one is still authored by the author of the controls and is
+  still the weakest number here.
+- Broker overhead: **0.1042 ms** mean per authorised `fs.read`, authorisation only.
+- **A measured regression, published:** attaching a lease store costs
+  **+0.00094 ms** per authorised `http.get` — about 19% of that guard's stage
+  and 4.4% of the call — agreed in sign by all five repeats at ~4.7× their
+  spread. The path guard's delta is **not distinguishable from noise** on this
+  machine and is reported as unmeasurable rather than as zero. A deployment
+  that attaches no store pays neither, and no store is the default.
+
+### Still not true
+
+- No third-party review.
+- `FileLeaseStore` re-reads and re-parses its file on every lookup. Its
+  overhead is **not measured** and no number for it should be quoted.
+- Both benign corpora are authored by the same hand as the controls, directly
+  or through a generator. Neither is recorded traffic.
+- Not on PyPI. Install from the repository.
+
 ## [0.2.3] — 2026-08-21
 
 **Use this one.** Same broker code as `v0.2.1`; what changed is the release
@@ -259,6 +350,7 @@ that accepts attacker-readable content is an exfiltration channel; there is no
 defence against a malicious operator; concurrent tasks sharing a budget pool
 are unsupported; no third-party review.
 
+[0.3.0]: https://github.com/impactRssi/agent-boundary/releases/tag/v0.3.0
 [0.2.3]: https://github.com/impactRssi/agent-boundary/releases/tag/v0.2.3
 [0.2.1]: https://github.com/impactRssi/agent-boundary/releases/tag/v0.2.1
 [0.2.0]: https://github.com/impactRssi/agent-boundary/releases/tag/v0.2.0

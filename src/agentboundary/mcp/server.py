@@ -20,17 +20,21 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from agentboundary.approval import ApprovalGuard, ApprovalStore
 from agentboundary.audit import AuditRecord, AuditSink, MemoryAuditSink, ResultStatus
 from agentboundary.broker import Broker
 from agentboundary.budget import BudgetGuard, BudgetLedger
-from agentboundary.confinement import EgressGuard, PathConfinementGuard
+from agentboundary.confinement import EgressGuard, PathConfinementGuard, assert_out_of_reach
 from agentboundary.guards import Guard
 from agentboundary.ingest import Envelope, ingest
+from agentboundary.leases import LeaseStore, leased_task
+from agentboundary.ledger import RefusalLedger, record_refusal
 from agentboundary.model import ProposedCall, Task
 from agentboundary.registry import ToolRegistry
+from agentboundary.rotation import AdvisorySink, emit_due
 
 __all__ = ["BrokeredServer", "ToolHandler", "build_server"]
 
@@ -59,13 +63,14 @@ class BrokeredServer:
     weaker authorisation path.
     """
 
-    __slots__ = ("_audit", "_broker", "_handlers", "_sequence")
+    __slots__ = ("_audit", "_broker", "_handlers", "_refusals", "_sequence")
 
     def __init__(
         self,
         broker: Broker,
         handlers: Mapping[str, ToolHandler],
         audit: AuditSink | None = None,
+        refusals: RefusalLedger | None = None,
     ) -> None:
         missing = sorted(set(broker.scoped_tools.names()) - set(handlers))
         if missing:
@@ -81,11 +86,21 @@ class BrokeredServer:
         # sink -- sending the whole trace to a throwaway. An audit trace that
         # quietly goes nowhere is the worst possible instance of this bug.
         self._audit = audit if audit is not None else MemoryAuditSink()
+        # Optional, and `None` means "no ledger" rather than "a throwaway one".
+        # A refusal ledger is an operator artifact: silently substituting an
+        # in-process one would report an empty ledger to whoever went looking.
+        if refusals is not None:
+            _assert_store_out_of_reach(refusals, broker.task, "refusal ledger")
+        self._refusals = refusals
         self._sequence = 0
 
     @property
     def audit(self) -> AuditSink:
         return self._audit
+
+    @property
+    def refusals(self) -> RefusalLedger | None:
+        return self._refusals
 
     @property
     def task(self) -> Task:
@@ -105,6 +120,11 @@ class BrokeredServer:
             self._audit.append(
                 AuditRecord.from_decision(self.task, proposed, decision, self._sequence)
             )
+            if self._refusals is not None:
+                # Recorded, and that is all. Nothing downstream of this call
+                # can turn the entry into permission -- see the trap described
+                # in agentboundary.ledger.
+                record_refusal(self._refusals, self.task, proposed, decision)
             reason = str(decision.reason) if decision.reason else None
             return CallOutcome(
                 authorised=False,
@@ -154,19 +174,58 @@ def build_broker(
     registry: ToolRegistry,
     approvals: ApprovalStore | None = None,
     ledger: BudgetLedger | None = None,
+    leases: LeaseStore | None = None,
+    advisories: AdvisorySink | None = None,
 ) -> Broker:
     """Assemble the standard guard pipeline for a task.
 
     One place, so a deployment cannot accidentally stand up a broker missing a
     guard. Adding a guard here reaches every transport at once.
+
+    Leases enter at two different times, and the difference is deliberate
+    (N-43). Tool leases are resolved **here**, once, by :func:`leased_task`, so
+    the task the broker holds is fixed for its whole life and an out-of-scope
+    tool still has no handle -- I1 stays structural, as ADR-0002 requires. Path
+    and host leases are handed to the confinement guards, which consult them at
+    call time, because a lease widens an argument check and an argument check is
+    what those guards perform.
+
+    The consequence of the first is stated in :func:`leased_task` and repeated
+    here because it is the kind of thing that gets lost: a tool lease that
+    expires mid-task keeps its handle until the task ends.
     """
+    _assert_store_out_of_reach(leases, task, "lease store")
+    if leases is not None and advisories is not None:
+        # Constructing a task is the moment a deployment is definitely running,
+        # so it is the cheapest place to sweep for credential leases that have
+        # run out. Unconditional, deduplicated by lease digest, and not the only
+        # place it should happen -- an operator also runs the sweep on a
+        # schedule, because a deployment that stops constructing tasks stops
+        # noticing expiries. See agentboundary.rotation.
+        emit_due(leases, advisories)
+    scoped = leased_task(task, leases)
     guards: list[Guard] = [
-        PathConfinementGuard(),
-        EgressGuard(),
-        BudgetGuard(ledger if ledger is not None else BudgetLedger(task.caps)),
+        PathConfinementGuard(leases=leases),
+        EgressGuard(leases=leases),
+        BudgetGuard(ledger if ledger is not None else BudgetLedger(scoped.caps)),
         ApprovalGuard(approvals if approvals is not None else ApprovalStore()),
     ]
-    return Broker(task, registry.scope_for(task), guards)
+    return Broker(scoped, registry.scope_for(scoped), guards)
+
+
+def _assert_store_out_of_reach(store: object | None, task: Task, what: str) -> None:
+    """Refuse to attach a store the task's own tools could write.
+
+    Checked by asking the store where it lives rather than by testing its
+    concrete type, so a deployment's own file-backed implementation is held to
+    the same rule as the ones shipped here. A store that keeps nothing on disk
+    exposes no ``path`` and has nothing to check.
+    """
+    if store is None:
+        return
+    location = getattr(store, "path", None)
+    if isinstance(location, Path):
+        assert_out_of_reach(location, task.fs_root, what)
 
 
 def build_server(
@@ -175,6 +234,11 @@ def build_server(
     handlers: Mapping[str, ToolHandler],
     approvals: ApprovalStore | None = None,
     audit: AuditSink | None = None,
+    refusals: RefusalLedger | None = None,
+    leases: LeaseStore | None = None,
+    advisories: AdvisorySink | None = None,
 ) -> BrokeredServer:
     """Build a brokered server for one task."""
-    return BrokeredServer(build_broker(task, registry, approvals), handlers, audit)
+    _assert_store_out_of_reach(advisories, task, "rotation advisory sink")
+    broker = build_broker(task, registry, approvals, leases=leases, advisories=advisories)
+    return BrokeredServer(broker, handlers, audit, refusals)
