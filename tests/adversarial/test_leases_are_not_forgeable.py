@@ -79,7 +79,15 @@ def test_a_lease_declared_in_content_never_reaches_the_store(carrier: str) -> No
 def test_the_store_has_no_operation_that_could_admit_a_forged_lease() -> None:
     """The absence is the control: there is no method for content to call."""
     surface = {name for name in dir(LeaseStore) if not name.startswith("_")}
-    assert surface == {"now", "leases", "active", "expired"}
+    assert surface == {
+        "now",
+        "leases",
+        "active",
+        "active_paths",
+        "active_hosts",
+        "active_tools",
+        "expired",
+    }
     assert not hasattr(LeaseStore, "grant")
     assert not hasattr(LeaseStore, "add")
     assert not hasattr(LeaseStore, "record")

@@ -215,7 +215,15 @@ class TestTheStoreCannotMintALease:
     def test_the_store_offers_no_grant(self) -> None:
         """If this class could mint one, code reachable from the loop could too."""
         surface = {name for name in dir(LeaseStore) if not name.startswith("_")}
-        assert surface == {"now", "leases", "active", "expired"}
+        assert surface == {
+            "now",
+            "leases",
+            "active",
+            "active_paths",
+            "active_hosts",
+            "active_tools",
+            "expired",
+        }
 
     def test_the_lease_module_does_not_import_the_refusal_ledger(self) -> None:
         """Granting names its subject explicitly. It is never derived from a refusal."""

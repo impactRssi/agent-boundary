@@ -1,6 +1,6 @@
 """Proof that the corpus is measuring something.
 
-A broker that refuses every call passes all 36 payloads. So does a broker whose
+A broker that refuses every call passes every payload in the corpus. So does a broker whose
 harness never dispatches them. Both would report the same green tick as one
 that works.
 
@@ -25,6 +25,7 @@ from agentboundary.broker import Broker
 from agentboundary.budget import BudgetGuard, BudgetLedger
 from agentboundary.confinement import EgressGuard, PathConfinementGuard
 from agentboundary.guards import Guard
+from agentboundary.leases import InMemoryLeaseStore, Lease, LeaseKind, leased_task
 from agentboundary.model import Caps, ProposedCall, Task
 from agentboundary.testing import reference_registry
 
@@ -184,3 +185,109 @@ class TestTheSamePayloadPassesWhenTheTaskPermitsIt:
             .authorise(ProposedCall("http.get", {"url": "https://evil.example/x"}))
             .authorised
         )
+
+
+class TestALeaseCanActuallyWiden:
+    """Without these, the lease payloads above pass because leases do nothing.
+
+    Each near miss the corpus refuses must flip to an authorisation when the
+    lease genuinely names the subject. A widening mechanism that never widens is
+    not a widening mechanism, and the refusals it produces measure nothing.
+    """
+
+    def _store(self, *leases: Lease, now: float) -> InMemoryLeaseStore:
+        return InMemoryLeaseStore(leases, clock=lambda: now)
+
+    def _guards(self, task: Task, leases: InMemoryLeaseStore | None) -> list[Guard]:
+        return [
+            PathConfinementGuard(leases=leases),
+            EgressGuard(leases=leases),
+            BudgetGuard(BudgetLedger(task.caps)),
+            ApprovalGuard(InMemoryApprovalStore()),
+        ]
+
+    def test_a_path_refused_beside_a_lease_is_authorised_inside_it(self, tmp_path: Path) -> None:
+        leased = tmp_path / "x" / "secrets"
+        leased.mkdir(parents=True)
+        (tmp_path / "x" / "secrets-backup").mkdir()
+        root = tmp_path / "workspace"
+        root.mkdir()
+        task = Task(
+            id="lease-1",
+            tool_scope=frozenset({"fs.read"}),
+            fs_root=str(root),
+            egress_allowlist=frozenset(),
+            caps=CAPS,
+        )
+        lease = Lease.granted(
+            kind=LeaseKind.PATH,
+            subject=str(leased),
+            granted_by="operator@example.test",
+            reason="three days of access to the key directory, OPS-4821",
+            granted_at=0.0,
+            duration_s=3 * 86_400.0,
+        )
+        broker = Broker(
+            task,
+            reference_registry().scope_for(task),
+            self._guards(task, self._store(lease, now=86_400.0)),
+        )
+        assert not broker.authorise(
+            ProposedCall("fs.read", {"path": str(tmp_path / "x" / "secrets-backup" / "k.env")})
+        ).authorised
+        assert broker.authorise(ProposedCall("fs.read", {"path": str(leased / "k.env")})).authorised
+
+    def test_a_host_refused_off_a_lease_is_authorised_on_it(self) -> None:
+        task = Task(
+            id="lease-2",
+            tool_scope=frozenset({"http.get"}),
+            fs_root=None,
+            egress_allowlist=frozenset(),
+            caps=CAPS,
+        )
+        lease = Lease.granted(
+            kind=LeaseKind.HOST,
+            subject="docs.internal",
+            granted_by="operator@example.test",
+            reason="three days to read the partner runbook mirror",
+            granted_at=0.0,
+            duration_s=86_400.0,
+        )
+        broker = Broker(
+            task,
+            reference_registry().scope_for(task),
+            self._guards(task, self._store(lease, now=1.0)),
+        )
+        assert not broker.authorise(
+            ProposedCall("http.get", {"url": "https://docs.internal.evil.example/x"})
+        ).authorised
+        assert broker.authorise(
+            ProposedCall("http.get", {"url": "https://docs.internal/runbook"})
+        ).authorised
+
+    def test_a_tool_refused_under_an_expired_lease_is_in_scope_under_a_live_one(self) -> None:
+        lease = Lease.granted(
+            kind=LeaseKind.TOOL,
+            subject="tickets.delete",
+            granted_by="operator@example.test",
+            reason="one-off cleanup of duplicate tickets, OPS-4900",
+            granted_at=0.0,
+            duration_s=86_400.0,
+        )
+        narrow = Task(
+            id="lease-3",
+            tool_scope=frozenset({"tickets.list"}),
+            fs_root=None,
+            egress_allowlist=frozenset(),
+            caps=CAPS,
+        )
+        expired = leased_task(narrow, self._store(lease, now=10 * 86_400.0))
+        assert not expired.is_in_scope("tickets.delete")
+
+        live = leased_task(narrow, self._store(lease, now=1.0))
+        assert live.is_in_scope("tickets.delete")
+        broker = Broker(live, reference_registry().scope_for(live), self._guards(live, None))
+        decision = broker.authorise(ProposedCall("tickets.delete", {"ticket_id": 4821}))
+        # In scope now, so the refusal moves to the approval gate rather than to
+        # scope: the lease widened I1 and left I3 exactly where it was.
+        assert str(decision.reason) == "approval_required"
