@@ -425,3 +425,57 @@ class TestRendering:
 
     def test_a_future_lease_is_marked_not_yet_in_force(self) -> None:
         assert "not yet in force" in describe([_lease()], T0 - DAY)
+
+
+class TestKindAndSensitivityAreCoerced:
+    """Regression: a plain string produced a lease that never applied.
+
+    ``LeaseKind`` subclasses ``str``, so ``"path" == LeaseKind.PATH`` is true
+    and the string spelling looks correct. It was not: the guards dispatch on
+    identity, so a lease built with ``kind="path"`` was accepted, stored, and
+    reported as active while applying to nothing at all.
+
+    It failed closed, which is what made it dangerous rather than merely
+    annoying. An operator who granted access, watched the call get refused
+    anyway, and concluded the lease was too narrow would reach for a broader
+    one. A control that fails closed *and* invisibly invites someone to widen
+    the wrong thing.
+
+    These pass values the way an untyped caller does -- a JSON file, a script,
+    a notebook. A typed caller is stopped by the annotation, which is correct
+    and is not what this class is about.
+    """
+
+    @staticmethod
+    def _build(**overrides: object) -> Lease:
+        fields: dict[str, object] = {
+            "kind": LeaseKind.PATH,
+            "subject": "/tmp/leased",
+            "granted_by": "operator@example.test",
+            "reason": "three days of access for the rotation job",
+            "granted_at": T0,
+            "expires_at": T0 + DAY,
+        }
+        fields.update(overrides)
+        return Lease(**fields)  # type: ignore[arg-type]
+
+    def test_a_string_kind_becomes_the_enum_member(self) -> None:
+        assert self._build(kind="path").kind is LeaseKind.PATH
+
+    def test_a_string_sensitivity_becomes_the_enum_member(self) -> None:
+        assert self._build(sensitivity="credential").sensitivity is Sensitivity.CREDENTIAL
+
+    @pytest.mark.parametrize("kind", ["paths", "PATH", "tool ", "anything", ""])
+    def test_an_unknown_kind_is_refused_by_name(self, kind: str) -> None:
+        """Never downgraded to a default. A lease whose kind silently changed
+        would authorise a subject its author never named."""
+        with pytest.raises(LeaseError, match="must be one of"):
+            self._build(kind=kind)
+
+    def test_an_unknown_sensitivity_is_refused(self) -> None:
+        with pytest.raises(LeaseError, match="must be one of"):
+            self._build(sensitivity="mildly-sensitive")
+
+    def test_the_string_form_actually_widens(self) -> None:
+        """The property that was broken: equality was true, application was not."""
+        assert self._build(kind="path").kind is self._build(kind=LeaseKind.PATH).kind

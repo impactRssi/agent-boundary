@@ -45,11 +45,13 @@ from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from enum import Enum
 from pathlib import Path
-from typing import Any, Final
+from typing import Any, Final, TypeVar
 
 from agentboundary.confinement import ConfinementError, resolve_candidate, without_root_label
 from agentboundary.errors import BrokerError
 from agentboundary.model import Task, normalise_tool_name
+
+_E = TypeVar("_E", bound=Enum)
 
 __all__ = [
     "MAX_DURATION_S",
@@ -192,6 +194,21 @@ def _normalise_subject(kind: LeaseKind, subject: str) -> str:
     return str(resolved)
 
 
+def _coerce(enum_type: type[_E], value: object, field: str) -> _E:
+    """Return ``value`` as a member of ``enum_type``, or refuse it by name.
+
+    An unknown value raises rather than falling back to a default. A lease
+    whose kind silently became something else would authorise a subject its
+    author never named.
+    """
+    try:
+        return enum_type(value)
+    except ValueError as exc:
+        permitted = ", ".join(sorted(member.value for member in enum_type))
+        msg = f"lease {field} must be one of {permitted}; got {value!r}"
+        raise LeaseError(msg) from exc
+
+
 @dataclass(frozen=True, slots=True)
 class Lease:
     """One operator-granted widening, bounded in time by construction.
@@ -216,6 +233,23 @@ class Lease:
     task_id: str | None = None
 
     def __post_init__(self) -> None:
+        # Coerce kind and sensitivity to their enum members before anything
+        # reads them.
+        #
+        # LeaseKind subclasses str, so `"path" == LeaseKind.PATH` is true and a
+        # plain string looks like it works. It does not: the guards dispatch on
+        # identity, so a lease built with `kind="path"` was accepted, stored,
+        # reported as active -- and silently never applied to anything.
+        #
+        # It failed closed, which is the safe direction, and that is exactly
+        # what made it dangerous. An operator who granted access, watched the
+        # call get refused anyway, and concluded the lease was too narrow would
+        # reach for a broader one. A control that fails closed *and* invisibly
+        # invites someone to widen the wrong thing.
+        object.__setattr__(self, "kind", _coerce(LeaseKind, self.kind, "kind"))
+        object.__setattr__(
+            self, "sensitivity", _coerce(Sensitivity, self.sensitivity, "sensitivity")
+        )
         object.__setattr__(self, "subject", _normalise_subject(self.kind, self.subject))
 
         if not self.granted_by.strip():
