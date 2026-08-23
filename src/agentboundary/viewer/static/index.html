@@ -51,6 +51,23 @@
   ol.checks .failed { color: var(--refuse); font-weight: 600; }
   .empty { color: var(--muted); padding: 2rem; text-align: center;
            border: 1px dashed var(--line); border-radius: 8px; }
+  h2 { font-size: 1.05rem; margin: 2.5rem 0 .25rem; }
+  .caveat { color: var(--muted); font-size: .85rem; margin: 0 0 1rem;
+            border-left: 3px solid var(--line); padding-left: .75rem; }
+  .lease { border: 1px solid var(--line); border-left-width: 4px; border-radius: 6px;
+           padding: .85rem 1rem; margin-bottom: .75rem; }
+  /* An active lease carries the alarm colour and an expired one does not. The
+     boundary is narrower while a lease runs, so "in force" is the state that
+     should catch an eye scanning the page, not the reassuring one. */
+  .lease[data-state="active"] { border-left-color: var(--refuse); background: var(--refuse-bg); }
+  .lease[data-state="expired"] { border-left-color: var(--line); }
+  .lease[data-state="pending"] { border-left-color: var(--muted); }
+  .lease .state { font-weight: 700; }
+  .lease[data-state="active"] .state { color: var(--refuse); }
+  .lease .reason { font-family: inherit; background: none; padding: 0;
+                   color: var(--muted); font-size: .85rem; }
+  .advisory { border: 1px solid var(--refuse); border-radius: 6px; padding: .85rem 1rem;
+              margin-bottom: .75rem; background: var(--refuse-bg); font-size: .88rem; }
 </style>
 </head>
 <body>
@@ -58,11 +75,20 @@
   <h1>Audit trace</h1>
   <p class="lede">
     Read-only. This viewer has no write path: every proposed call is shown as the
-    broker decided it, refusals included.
+    broker decided it, refusals included, and every lease is shown as an operator
+    granted it out of band.
   </p>
 
   <section class="summary" id="summary" aria-label="Summary"></section>
   <section id="records" aria-label="Records"></section>
+
+  <h2>Leases in force</h2>
+  <p class="caveat" id="lease-notice" data-testid="lease-notice"></p>
+  <section class="summary" id="lease-summary" aria-label="Lease summary"></section>
+  <section id="leases" aria-label="Leases"></section>
+
+  <h2>Rotation owed</h2>
+  <section id="advisories" aria-label="Rotation advisories"></section>
 </main>
 
 <script>
@@ -145,11 +171,76 @@ function renderRecords(records) {
   for (const record of records) host.appendChild(renderRecord(record));
 }
 
-fetch("trace.json")
-  .then((response) => response.json())
-  .then((payload) => {
-    renderSummary(payload.summary);
-    renderRecords(payload.records);
+// Leases. Displayed, never actuated: nothing below creates an element that can
+// be submitted, clicked or edited. A viewer that could grant a lease would be a
+// second write path into the store, reachable over HTTP, in a process the rest
+// of this design keeps read-only.
+function renderLease(lease) {
+  const node = el("article", "lease");
+  node.dataset.state = lease.state;
+  node.dataset.kind = lease.kind;
+  node.dataset.subject = lease.subject;
+  node.setAttribute("data-testid", "lease");
+
+  const head = el("div", "head");
+  head.appendChild(el("span", "tool", lease.kind + " " + lease.subject));
+  const state = el("span", "state", lease.state_text);
+  state.setAttribute("data-testid", "lease-state");
+  head.appendChild(state);
+  const who = el("span", "status",
+    lease.sensitivity + " · by " + lease.granted_by + " · " +
+    (lease.task_id === null ? "every task" : "task " + lease.task_id));
+  who.setAttribute("data-testid", "lease-attribution");
+  head.appendChild(who);
+  node.appendChild(head);
+
+  const reason = el("p", "reason", "Reason: " + lease.reason);
+  reason.setAttribute("data-testid", "lease-reason");
+  node.appendChild(reason);
+  return node;
+}
+
+function renderLeases(payload) {
+  document.getElementById("lease-notice").textContent = payload.notice;
+
+  const summary = document.getElementById("lease-summary");
+  summary.replaceChildren();
+  summary.appendChild(stat(payload.summary.granted, "leases granted"));
+  summary.appendChild(stat(payload.summary.active, "in force now"));
+  summary.appendChild(stat(payload.summary.expired, "expired"));
+  summary.appendChild(stat(payload.summary.rotation_owed, "rotation owed"));
+
+  const host = document.getElementById("leases");
+  host.replaceChildren();
+  if (!payload.leases.length) {
+    host.appendChild(el("p", "empty", "No lease has been granted."));
+  } else {
+    for (const lease of payload.leases) host.appendChild(renderLease(lease));
+  }
+
+  const advisories = document.getElementById("advisories");
+  advisories.replaceChildren();
+  if (!payload.advisories.length) {
+    advisories.appendChild(
+      el("p", "empty", "No credential lease has expired, so no rotation is owed."));
+    return;
+  }
+  for (const advice of payload.advisories) {
+    const node = el("article", "advisory", advice.message);
+    node.setAttribute("data-testid", "advisory");
+    node.dataset.subject = advice.subject;
+    advisories.appendChild(node);
+  }
+}
+
+Promise.all([
+  fetch("trace.json").then((response) => response.json()),
+  fetch("leases.json").then((response) => response.json()),
+])
+  .then(([trace, leases]) => {
+    renderSummary(trace.summary);
+    renderRecords(trace.records);
+    renderLeases(leases);
     document.body.dataset.loaded = "true";
   })
   .catch((error) => {
