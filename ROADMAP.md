@@ -1,6 +1,7 @@
 # Roadmap
 
-**All nodes merged through N-40. `v0.2.0` released.** Phase 8 closed gaps found
+**All nodes merged except N-36 (PyPI, blocked on a naming decision and a
+trusted publisher). `v0.3.0` released.** Phase 8 closed gaps found
 by auditing `v0.1.0` as an outsider would — cloning it clean, running what the
 documentation said, and checking whether the repository's claims about itself
 held. Three did not, and two of those were security defects. Both are in the
