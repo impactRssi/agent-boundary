@@ -21,7 +21,18 @@ from urllib.parse import urlsplit
 from agentboundary.errors import RefusalReason
 from agentboundary.guards import CallContext, GuardResult
 
-__all__ = ["EgressGuard", "PathConfinementGuard", "resolve_within"]
+__all__ = [
+    "ALLOWED_SCHEMES",
+    "DEFAULT_PATH_ARGUMENTS",
+    "DEFAULT_URL_ARGUMENTS",
+    "ConfinementError",
+    "EgressGuard",
+    "PathConfinementGuard",
+    "contains",
+    "resolve_candidate",
+    "resolve_within",
+    "without_root_label",
+]
 
 #: Argument names treated as paths. Explicit rather than inferred: a guard that
 #: guesses which arguments are path-shaped will eventually guess wrong in the
@@ -106,6 +117,47 @@ def _resolve_fully(path: Path) -> Path:
     return current
 
 
+def resolve_candidate(candidate: str, base: Path) -> Path:
+    """Resolve ``candidate`` to its canonical location. No containment test.
+
+    Split out of :func:`resolve_within` so that resolution has exactly one
+    implementation and containment has exactly one implementation, and a
+    caller that needs the resolved form for a *second* containment question --
+    a permission lease over a different root, for instance -- reuses both
+    rather than writing a path comparison of its own.
+
+    A relative candidate is anchored at ``base``, which is the task's root: a
+    path argument means what the task says it means, and a lease consulted
+    afterwards must judge the same resolved location, not a differently
+    anchored one.
+
+    Raises:
+        ConfinementError: a component could not be resolved at all.
+        OSError: resolution failed for a reason the caller must treat as
+            undecidable, such as a symlink loop.
+    """
+    resolved_base = base.resolve(strict=True)
+    target = Path(candidate)
+    absolute = target if target.is_absolute() else resolved_base / target
+    return _resolve_fully(absolute)
+
+
+def contains(root: Path, resolved: Path) -> bool:
+    """The containment test. One implementation, used by every caller.
+
+    ``relative_to`` rather than a string prefix compare: ``/srv/data-backup``
+    must not count as inside ``/srv/data``, and a prefix comparison says it
+    does. Both arguments must already be resolved -- comparing before resolving
+    is the classic mistake, and this function cannot detect it, which is why it
+    is never called on a raw argument.
+    """
+    try:
+        resolved.relative_to(root)
+    except ValueError:
+        return False
+    return True
+
+
 def resolve_within(candidate: str, root: Path) -> Path:
     """Resolve ``candidate`` and return it only if it lies inside ``root``.
 
@@ -126,18 +178,10 @@ def resolve_within(candidate: str, root: Path) -> Path:
             undecidable, such as a symlink loop.
     """
     resolved_root = root.resolve(strict=True)
-    target = Path(candidate)
-    absolute = target if target.is_absolute() else resolved_root / target
-    resolved = _resolve_fully(absolute)
-
-    # relative_to is the containment test rather than a string prefix compare:
-    # `/srv/data-backup` must not count as inside `/srv/data`, and a prefix
-    # comparison says it does.
-    try:
-        resolved.relative_to(resolved_root)
-    except ValueError as exc:
+    resolved = resolve_candidate(candidate, resolved_root)
+    if not contains(resolved_root, resolved):
         msg = f"{candidate!r} resolves to {resolved} which is outside root {resolved_root}"
-        raise ConfinementError(msg) from exc
+        raise ConfinementError(msg)
     return resolved
 
 
@@ -252,7 +296,7 @@ class EgressGuard:
                 f"argument {argument!r}: URL declares no host",
             )
 
-        candidate = _without_root_label(host)
+        candidate = without_root_label(host)
 
         # An address literal is not a DNS name, so the root label means nothing
         # on it -- and clients disagree about what the string denotes. A WHATWG
@@ -260,7 +304,7 @@ class EgressGuard:
         # treats "10.1.2.3." as a name and asks a resolver, whose answer is not
         # ours to predict. A destination whose identity depends on the client's
         # parser cannot be authorised, so it is refused. The allowlist side is
-        # normalised anyway (see _without_root_label): an operator entry of
+        # normalised anyway (see without_root_label): an operator entry of
         # "127.0.0.1." must still reach the loopback rule below rather than
         # sailing past a check that only recognises the undotted spelling.
         if _as_ip(candidate) is not None and candidate != host:
@@ -270,7 +314,7 @@ class EgressGuard:
                 f"root label, which different clients resolve to different destinations",
             )
 
-        if candidate not in {_without_root_label(entry.lower()) for entry in allowlist}:
+        if candidate not in {without_root_label(entry.lower()) for entry in allowlist}:
             return GuardResult.refuse(
                 RefusalReason.EGRESS_HOST_NOT_ALLOWED,
                 f"argument {argument!r}: host {host!r} is not allowlisted "
@@ -301,7 +345,7 @@ def _string_arguments(arguments: Mapping[str, Any], names: frozenset[str]) -> di
     }
 
 
-def _without_root_label(host: str) -> str:
+def without_root_label(host: str) -> str:
     """The comparison key for a host: the same name without its DNS root label.
 
     ``docs.internal.`` and ``docs.internal`` are one host. The trailing dot is

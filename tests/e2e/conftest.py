@@ -10,6 +10,7 @@ import pytest
 
 from agentboundary.approval import ApprovalStore
 from agentboundary.audit import MemoryAuditSink
+from agentboundary.ledger import RefusalLedger
 from agentboundary.mcp.server import BrokeredServer, ToolHandler, build_broker
 from agentboundary.model import Caps, Task
 from agentboundary.testing.catalogue import reference_registry
@@ -28,6 +29,7 @@ class ServerFactory(Protocol):
         caps: Caps = ...,
         approvals: ApprovalStore | None = ...,
         audit: MemoryAuditSink | None = ...,
+        refusals: RefusalLedger | None = ...,
     ) -> BrokeredServer: ...
 
 
@@ -92,6 +94,7 @@ def make_server(handlers: dict[str, ToolHandler], workspace: Path) -> ServerFact
         caps: Caps = CAPS,
         approvals: ApprovalStore | None = None,
         audit: MemoryAuditSink | None = None,
+        refusals: RefusalLedger | None = None,
     ) -> BrokeredServer:
         task = Task(
             id="e2e-task",
@@ -104,6 +107,7 @@ def make_server(handlers: dict[str, ToolHandler], workspace: Path) -> ServerFact
             build_broker(task, reference_registry(), approvals),
             {name: handlers[name] for name in scope},
             audit if audit is not None else MemoryAuditSink(),
+            refusals,
         )
 
     return factory
