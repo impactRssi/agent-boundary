@@ -361,14 +361,29 @@ Read this section. It is the one that tells you whether this is useful to you.
 5. **No defence against a malicious operator**, by design. Whoever configures
    the task, the allowlist, and the approval policy is trusted.
 6. **No claim about model alignment.** The design assumes the model is hostile.
-7. **Both benign-task corpora are synthetic, and neither is independent.** The
+7. **A permission lease is a hole you opened on purpose, and while it is open
+   the boundary is not there.** An operator can widen a task to one extra path,
+   host, or tool for a stated period. **A leased path is an unbounded path for
+   the duration** — during the window, the invariant the lease widens does not
+   hold for its subject. What bounds it is construction, not policy: a lease
+   with no expiry cannot be expressed, and the window is capped per sensitivity
+   class at 7 days for `credential`, 14 for `sensitive`, and 30 for `routine` —
+   caps we chose so that "forever" cannot be spelled as a large integer, not
+   numbers derived from any measurement. Tool leases are asymmetric and it
+   matters: they resolve at task construction, so one that expires mid-task
+   keeps its handle until the task ends. Nothing grants a lease from the
+   refusal ledger — a list an attacker can add to by steering the agent — and
+   granting requires the subject to be typed rather than picked from it. See
+   [`ADR-0008`](docs/adr/ADR-0008-permission-leases-are-bounded-by-construction.md)
+   and [`docs/THREAT_MODEL.md`](docs/THREAT_MODEL.md) §7, items 15–23.
+8. **Both benign-task corpora are synthetic, and neither is independent.** The
    hand-written one I wrote knowing what the controls check, so its 0/25 reads
    as "no benign task I thought of was refused". The generated one removes the
    hand-picking but not the provenance — I wrote the generator too. Both are
    materially weaker than a rate measured against traffic someone else
    generated, and the generated corpus already refuses 8 of its 141 tasks (§6).
-8. **Concurrent tasks sharing a budget pool are not supported** in v0.1.0.
-9. **No third-party security review** at time of writing.
+9. **Concurrent tasks sharing a budget pool are not supported** in v0.1.0.
+10. **No third-party security review** at time of writing.
 
 ### What would falsify this design
 
