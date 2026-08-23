@@ -25,7 +25,7 @@ import statistics
 import time
 from collections import Counter
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any, Final
@@ -40,9 +40,10 @@ from agentboundary.broker import Broker
 from agentboundary.budget import BudgetGuard, BudgetLedger
 from agentboundary.confinement import EgressGuard, PathConfinementGuard
 from agentboundary.guards import CallContext, CommittingGuard, Guard, GuardResult
+from agentboundary.leases import InMemoryLeaseStore, Lease, LeaseKind, LeaseStore, Sensitivity
 from agentboundary.model import Caps, Irreversibility, ProposedCall, Task
 from agentboundary.schema import validate
-from agentboundary.testing import load_corpus
+from agentboundary.testing import Payload, broker_for, load_corpus
 from agentboundary.testing.catalogue import reference_registry
 
 # Two spellings because this file is run two ways: directly, where Python puts
@@ -115,41 +116,112 @@ class Conditions:
         )
 
 
-def _guards(task: Task, approvals: ApprovalStore) -> list[Guard]:
+def _guards(task: Task, approvals: ApprovalStore, leases: LeaseStore | None = None) -> list[Guard]:
+    """The standard pipeline, assembled the way ``mcp.server.build_broker`` does.
+
+    ``leases`` defaults to ``None`` because that is the default deployment: a
+    lease store is something an operator attaches deliberately. Every
+    measurement below that leaves it ``None`` is therefore measuring the
+    unleased deployment, and says so where its figure is published.
+    """
     return [
-        PathConfinementGuard(),
-        EgressGuard(),
+        PathConfinementGuard(leases=leases),
+        EgressGuard(leases=leases),
         BudgetGuard(BudgetLedger(task.caps)),
         ApprovalGuard(approvals),
     ]
 
 
+def _lease_summary(payload: Payload, workspace: str) -> dict[str, Any]:
+    """What one lease-declaring payload was judged against, and what its lease changed.
+
+    The counterfactual is measured rather than asserted. "A lease can only
+    widen, so the block rate is unaffected" is a claim about the design; running
+    the same payload twice -- once with the store its declaration builds, once
+    with no store attached -- is a measurement, and it is cheap enough that
+    there is no excuse for publishing the claim instead.
+    """
+    with_leases = broker_for(payload, workspace).authorise(payload.call)
+    bare = replace(payload, leases=(), lease_now=None)
+    without_leases = broker_for(bare, workspace).authorise(bare.call)
+
+    instant = payload.lease_now
+    if instant is None:  # pragma: no cover -- Payload.lease_store already refuses this
+        msg = f"payload {payload.id!r} declares a lease with no lease_now"
+        raise AssertionError(msg)
+    declared = [
+        {
+            "kind": str(entry.get("kind")),
+            "subject": str(entry.get("subject")),
+            "sensitivity": str(entry.get("sensitivity", "credential")),
+            # Whether the operator's grant was live when the payload arrived. An
+            # expired lease failing to widen proves something different from a
+            # live lease failing to admit a neighbouring subject, so which one
+            # it was belongs next to the result rather than in the corpus file.
+            "state_at_lease_now": (
+                "active"
+                if float(entry["granted_at"]) <= instant < float(entry["expires_at"])
+                else "expired"
+            ),
+        }
+        for entry in payload.leases
+    ]
+    return {
+        "id": payload.id,
+        "carrier": payload.carrier,
+        "attack": payload.attack,
+        "judged_at": instant,
+        "declared_leases": declared,
+        "blocked_with_its_leases": not with_leases.authorised,
+        "reason_with_its_leases": str(with_leases.reason) if with_leases.reason else None,
+        "blocked_with_no_lease_store": not without_leases.authorised,
+        "reason_with_no_lease_store": (
+            str(without_leases.reason) if without_leases.reason else None
+        ),
+        "the_lease_changed_the_outcome": (
+            with_leases.authorised != without_leases.authorised
+            or str(with_leases.reason) != str(without_leases.reason)
+        ),
+    }
+
+
 def measure_injection_corpus() -> dict[str, Any]:
-    """Attempted vs blocked, broken down by carrier. Never a single aggregate."""
+    """Attempted vs blocked, broken down by carrier. Never a single aggregate.
+
+    The pipeline comes from :func:`agentboundary.testing.broker_for`, which is
+    the assembly the adversarial tier and ``mcp.server.build_broker`` use, so a
+    payload that declares a lease is judged **with** that lease.
+
+    This harness previously built its own pipeline with no lease store, which
+    judged six lease-declaring payloads without the control they exist to
+    exercise. The block rate was unaffected -- a lease can only widen, and the
+    ``leases`` block below measures that rather than asserting it -- but a
+    harness that silently ignores a control its corpus exercises is measuring
+    something other than what it reports.
+    """
     payloads = load_corpus(CORPUS_DIR)
     by_carrier: dict[str, dict[str, int]] = {}
     wrong_reason: list[str] = []
+    leased: list[dict[str, Any]] = []
 
     with TemporaryDirectory(prefix="ab-bench-") as raw_root:
         root = Path(raw_root)
         (root / "workspace").mkdir()
+        workspace = str(root / "workspace")
         for payload in payloads:
-            task = payload.build_task(str(root / "workspace"))
-            broker = Broker(
-                task,
-                reference_registry().scope_for(task),
-                _guards(task, ApprovalStore()),
-            )
-            decision = broker.authorise(payload.call)
+            decision = broker_for(payload, workspace).authorise(payload.call)
             bucket = by_carrier.setdefault(payload.carrier, {"attempted": 0, "blocked": 0})
             bucket["attempted"] += 1
             if not decision.authorised:
                 bucket["blocked"] += 1
                 if str(decision.reason) != payload.expected_reason:
                     wrong_reason.append(payload.id)
+            if payload.leases:
+                leased.append(_lease_summary(payload, workspace))
 
     attempted = sum(bucket["attempted"] for bucket in by_carrier.values())
     blocked = sum(bucket["blocked"] for bucket in by_carrier.values())
+    kinds = Counter(entry["kind"] for summary in leased for entry in summary["declared_leases"])
     return {
         "attempted": attempted,
         "blocked": blocked,
@@ -159,6 +231,23 @@ def measure_injection_corpus() -> dict[str, Any]:
         # for the wrong reason means a different control fired than the one
         # under test, and hiding that would inflate the headline figure.
         "blocked_for_the_wrong_reason": wrong_reason,
+        # Declared rather than left implicit. Whether the lease control was
+        # attached while these payloads were judged changes what "blocked"
+        # means, so a reader must not have to read the harness to find out.
+        "leases": {
+            "payloads_declaring_a_lease": len(leased),
+            "payloads_declaring_no_lease": len(payloads) - len(leased),
+            "judged_with_the_leases_they_declare": True,
+            "declared_lease_kinds": dict(sorted(kinds.items())),
+            "outcome_changed_by_a_lease": sorted(
+                summary["id"] for summary in leased if summary["the_lease_changed_the_outcome"]
+            ),
+            "clock": (
+                "each lease-declaring payload pins its own instant (lease_now), so whether a "
+                "lease is live does not depend on the date the harness happened to be run"
+            ),
+            "payloads": leased,
+        },
     }
 
 
@@ -377,6 +466,49 @@ def _timer_pair_ms(iterations: int) -> float:
     return (time.perf_counter() - started) / iterations * 1000.0
 
 
+_DAY_S: Final[float] = 86_400.0
+
+#: The instant the overhead lease store is pinned to. A benchmark whose result
+#: depends on the date it was run is not a benchmark, and a lease that expires
+#: between two repeats would move a guard from the widening path to the refusal
+#: path halfway through a sample set.
+_LEASE_INSTANT: Final[float] = 1_700_086_400.0
+
+
+def _overhead_lease_store() -> InMemoryLeaseStore:
+    """One live lease of each call-time kind, over subjects the call shapes do not need.
+
+    Deliberately irrelevant subjects. What this measures is the cost of having a
+    store attached at all -- the branch, the lookup, the expiry filter -- not the
+    cost of a widening, which only a call that would otherwise be refused pays.
+    An adopter who attaches a store pays this on every call whether or not any
+    lease of theirs ever applies, so it is the figure that generalises.
+    """
+    return InMemoryLeaseStore(
+        [
+            Lease.granted(
+                kind=LeaseKind.PATH,
+                subject="/srv/agent-boundary/benchmark-fixture",
+                granted_by="operator@example.test",
+                reason="overhead fixture: a store with something in it to filter",
+                granted_at=_LEASE_INSTANT - _DAY_S,
+                duration_s=3 * _DAY_S,
+                sensitivity=Sensitivity.ROUTINE,
+            ),
+            Lease.granted(
+                kind=LeaseKind.HOST,
+                subject="leased.internal",
+                granted_by="operator@example.test",
+                reason="overhead fixture: a store with something in it to filter",
+                granted_at=_LEASE_INSTANT - _DAY_S,
+                duration_s=3 * _DAY_S,
+                sensitivity=Sensitivity.ROUTINE,
+            ),
+        ],
+        clock=lambda: _LEASE_INSTANT,
+    )
+
+
 @dataclass(frozen=True)
 class _Scenario:
     """One call shape. Which controls do real work depends on the arguments."""
@@ -387,6 +519,10 @@ class _Scenario:
     tool_scope: frozenset[str]
     egress_allowlist: frozenset[str]
     approved: bool
+    #: Whether a lease store is attached. ``False`` is the default deployment;
+    #: the two shapes that set it exist so that what leases cost is measured
+    #: rather than assumed to be free.
+    leased: bool = False
 
 
 def _scenarios() -> tuple[_Scenario, ...]:
@@ -423,12 +559,35 @@ def _scenarios() -> tuple[_Scenario, ...]:
             frozenset(),
             approved=False,
         ),
+        # The same first and third shapes with a lease store attached, so the
+        # two figures can be read against each other. The guards consult a store
+        # at different points -- the path guard only once a path has already
+        # fallen outside the root, the egress guard on every URL argument -- and
+        # a single "leases cost X" figure would hide that asymmetry.
+        _Scenario(
+            "fs.read -- one path argument, lease store attached",
+            "fs.read",
+            {"path": "runbook.md"},
+            frozenset({"fs.read"}),
+            frozenset(),
+            approved=False,
+            leased=True,
+        ),
+        _Scenario(
+            "http.get -- one url argument, lease store attached",
+            "http.get",
+            {"url": "https://docs.internal/runbook"},
+            frozenset({"http.get"}),
+            frozenset({"docs.internal"}),
+            approved=False,
+            leased=True,
+        ),
     )
 
 
 def _task_for(scenario: _Scenario, workspace: Path) -> Task:
     return Task(
-        id=f"overhead-{scenario.tool_name}",
+        id=f"overhead-{scenario.tool_name}{'-leased' if scenario.leased else ''}",
         tool_scope=scenario.tool_scope,
         fs_root=str(workspace),
         egress_allowlist=scenario.egress_allowlist,
@@ -543,9 +702,11 @@ def measure_overhead_by_stage(iterations: int = 2000) -> dict[str, Any]:
     resolution and schema validation are measured directly on the same inputs,
     because they are broker-internal steps rather than guards.
 
-    Four call shapes, because which control does real work depends on the
+    Six call shapes, because which control does real work depends on the
     arguments: a path argument exercises confinement and leaves the egress
-    check with nothing to do, and vice versa.
+    check with nothing to do, and vice versa. The last two repeat the first and
+    third with a lease store attached, so that what the lease check added to
+    those two guards is a measured difference rather than an assumption.
     """
     timer_pair = _timer_pair_ms(min(iterations * 5, 20_000))
     scenarios: dict[str, Any] = {}
@@ -576,7 +737,10 @@ def measure_overhead_by_stage(iterations: int = 2000) -> dict[str, Any]:
             schema_ms = (time.perf_counter() - started) / iterations * 1000.0
 
             # The guards, inside a real pipeline.
-            timed = [_timed(guard) for guard in _guards(task, _approvals_for(scenario, task))]
+            leases = _overhead_lease_store() if scenario.leased else None
+            timed = [
+                _timed(guard) for guard in _guards(task, _approvals_for(scenario, task), leases)
+            ]
             instrumented = Broker(task, scoped, timed)
             for _ in range(200):
                 instrumented.authorise(call)
@@ -595,12 +759,24 @@ def measure_overhead_by_stage(iterations: int = 2000) -> dict[str, Any]:
             # The total is measured on a clean pipeline: the wrappers above
             # inflate it, and publishing an instrumented total as the headline
             # would overstate what an adopter pays.
-            clean = Broker(task, scoped, _guards(task, _approvals_for(scenario, task)))
+            clean = Broker(
+                task,
+                scoped,
+                _guards(
+                    task,
+                    _approvals_for(scenario, task),
+                    _overhead_lease_store() if scenario.leased else None,
+                ),
+            )
             total_ms = statistics.fmean(_time_authorisation(clean, call, iterations))
 
             attributed = sum(stages.values())
             scenarios[scenario.label] = {
                 "total_ms": round(total_ms, 4),
+                # Stated per shape rather than inferred from the label: a
+                # deployment with no lease store attached pays none of the lease
+                # cost, and that is the default.
+                "lease_store_attached": scenario.leased,
                 "stages_ms": stages,
                 # A stage whose figure is within a few timer pairs of zero is
                 # not distinguishable from the instrument that measured it.
@@ -626,11 +802,118 @@ def measure_overhead_by_stage(iterations: int = 2000) -> dict[str, Any]:
         "attribution_note": (
             "Every guard figure includes one perf_counter pair "
             f"({round(timer_pair, 5)} ms on this machine), so each is an upper "
-            "bound. All four call shapes are authorised end to end, so every "
+            "bound. All six call shapes are authorised end to end, so every "
             "stage runs; a refused call is cheaper because the pipeline "
-            "short-circuits at the guard that refused."
+            "short-circuits at the guard that refused. Four shapes have no "
+            "lease store attached, which is the default deployment; two do, "
+            "and are the only place the lease check is paid for."
         ),
         "measures": _MEASURES,
+    }
+
+
+def _stage_ms(
+    scenario: _Scenario,
+    guard_name: str,
+    workspace: Path,
+    registry: Any,
+    iterations: int,
+    *,
+    leased: bool,
+) -> float:
+    """One guard's cost inside a real pipeline, in milliseconds per call."""
+    task = _task_for(replace(scenario, leased=leased), workspace)
+    scoped = registry.scope_for(task)
+    call = ProposedCall(scenario.tool_name, scenario.arguments)
+    store = _overhead_lease_store() if leased else None
+    timed = [_timed(guard) for guard in _guards(task, _approvals_for(scenario, task), store)]
+    broker = Broker(task, scoped, timed)
+    for _ in range(200):
+        broker.authorise(call)
+    for guard in timed:
+        guard.reset()
+    for _ in range(iterations):
+        broker.authorise(call)
+    return next(g.elapsed_s for g in timed if g.name == guard_name) / iterations * 1000.0
+
+
+def measure_lease_check_cost(iterations: int = 2000, repeats: int = 5) -> dict[str, Any]:
+    """What attaching a lease store costs the two guards that consult one (N-43).
+
+    Measured as a **paired** difference, alternating the two pipelines inside
+    each repeat, because what is being looked for here is smaller than the drift
+    between two separately-timed runs on a laptop. Comparing a single leased
+    figure against a single unleased one would report that drift as the price of
+    a feature.
+
+    Every repeat's delta is published rather than only their mean. A mean whose
+    sign flips between repeats is noise, and a reader can only see that if they
+    are shown the repeats.
+    """
+    scenarios = {scenario.tool_name: scenario for scenario in _scenarios() if not scenario.leased}
+    pairs = (
+        ("path_confinement", scenarios["fs.read"]),
+        ("egress_allowlist", scenarios["http.get"]),
+    )
+    guards: dict[str, Any] = {}
+
+    with TemporaryDirectory(prefix="ab-lease-cost-") as raw_root:
+        workspace = Path(raw_root) / "workspace"
+        (workspace / "docs").mkdir(parents=True)
+        (workspace / "runbook.md").write_text("x", encoding="utf-8")
+        registry = reference_registry()
+
+        for guard_name, scenario in pairs:
+            without: list[float] = []
+            with_store: list[float] = []
+            for index in range(repeats):
+                # Alternated, so a machine that drifts in one direction over the
+                # run does not push the whole difference into one arm.
+                order = (False, True) if index % 2 == 0 else (True, False)
+                measured = {
+                    leased: _stage_ms(
+                        scenario, guard_name, workspace, registry, iterations, leased=leased
+                    )
+                    for leased in order
+                }
+                without.append(measured[False])
+                with_store.append(measured[True])
+
+            deltas = [round(b - a, 5) for a, b in zip(without, with_store, strict=True)]
+            mean_delta = statistics.fmean(deltas)
+            spread = max(deltas) - min(deltas)
+            guards[guard_name] = {
+                "call_shape": scenario.label,
+                "without_a_lease_store_ms": round(statistics.fmean(without), 5),
+                "with_a_lease_store_ms": round(statistics.fmean(with_store), 5),
+                "mean_delta_ms": round(mean_delta, 5),
+                "per_repeat_delta_ms": deltas,
+                "delta_spread_ms": round(spread, 5),
+                # The only honest summary of a difference this small: whether it
+                # is larger than the run-to-run spread of the same measurement.
+                # False means "not distinguishable from noise on this machine",
+                # which is a result, not a missing one.
+                "delta_exceeds_its_own_spread": abs(mean_delta) > spread,
+                "every_repeat_agrees_on_the_sign": len({delta > 0 for delta in deltas}) == 1,
+            }
+
+    return {
+        "iterations": iterations,
+        "repeats": repeats,
+        "guards": guards,
+        "note": (
+            "The path guard consults the store only after a path has already "
+            "fallen outside the root, so an in-root authorised call never reads "
+            "it. The egress guard reads the store on every URL argument, so a "
+            "call carrying a URL pays for the lookup whether or not any lease "
+            "of the operator's applies. That asymmetry is why this is two "
+            "figures and not one, and it is a property of where each guard "
+            "branches rather than of this machine."
+        ),
+        "default_deployment": (
+            "no lease store is attached unless an operator attaches one, so a "
+            "deployment that grants no leases pays none of this"
+        ),
     }
 
 
@@ -682,6 +965,7 @@ def run(iterations: int) -> dict[str, Any]:
         "false_refusals": measure_false_refusals(),
         "overhead": measure_overhead(iterations),
         "overhead_by_stage": measure_overhead_by_stage(iterations),
+        "lease_check_cost": measure_lease_check_cost(iterations),
         "cap_behaviour": measure_cap_behaviour(),
     }
 
@@ -700,6 +984,28 @@ def _report(results: Mapping[str, Any]) -> str:
         add(f"  {carrier:<24} {counts['blocked']}/{counts['attempted']}")
     if corpus["blocked_for_the_wrong_reason"]:
         add(f"  BLOCKED FOR THE WRONG REASON: {corpus['blocked_for_the_wrong_reason']}")
+
+    leases = corpus["leases"]
+    add(
+        f"  leases: {leases['payloads_declaring_a_lease']} payload(s) declare one and were "
+        f"judged with it; {leases['payloads_declaring_no_lease']} declare none"
+    )
+    add(f"    declared kinds: {leases['declared_lease_kinds']}")
+    add(f"    {leases['clock']}")
+    for summary in leases["payloads"]:
+        kinds = ", ".join(
+            f"{entry['kind']} on {entry['subject']} ({entry['state_at_lease_now']})"
+            for entry in summary["declared_leases"]
+        )
+        add(f"    {summary['id']}: {kinds}")
+        add(
+            f"      with its lease(s): {summary['reason_with_its_leases']}   "
+            f"with no lease store: {summary['reason_with_no_lease_store']}"
+        )
+    add(
+        "    outcome changed by a lease: "
+        + (", ".join(leases["outcome_changed_by_a_lease"]) or "none")
+    )
     add("")
 
     # Side by side, never combined: the two corpora differ in who chose the
@@ -735,7 +1041,8 @@ def _report(results: Mapping[str, Any]) -> str:
     stages = results["overhead_by_stage"]
     add(f"Where the overhead goes, {stages['iterations']} iterations per call shape:")
     for label, scenario in stages["scenarios"].items():
-        add(f"  {label}: total {scenario['total_ms']} ms")
+        store = "lease store attached" if scenario["lease_store_attached"] else "no lease store"
+        add(f"  {label}: total {scenario['total_ms']} ms ({store})")
         for stage, cost in scenario["stages_ms"].items():
             add(f"    {stage:<20} {cost:.5f} ms")
         add(
@@ -748,6 +1055,27 @@ def _report(results: Mapping[str, Any]) -> str:
                 + ", ".join(scenario["stages_at_the_instrument_floor"])
             )
     add(f"  {stages['attribution_note']}")
+    add("")
+
+    lease_cost = results["lease_check_cost"]
+    add(
+        f"What attaching a lease store costs, paired A/B, "
+        f"{lease_cost['iterations']} iterations x {lease_cost['repeats']} repeats:"
+    )
+    for guard, delta in lease_cost["guards"].items():
+        add(f"  {guard} ({delta['call_shape']})")
+        add(
+            f"    {delta['without_a_lease_store_ms']:.5f} -> "
+            f"{delta['with_a_lease_store_ms']:.5f} ms, mean delta "
+            f"{delta['mean_delta_ms']:+.5f} ms, spread {delta['delta_spread_ms']:.5f} ms"
+        )
+        add(f"    per-repeat deltas: {delta['per_repeat_delta_ms']}")
+        add(
+            f"    larger than its own spread: {delta['delta_exceeds_its_own_spread']}; "
+            f"every repeat agrees on the sign: {delta['every_repeat_agrees_on_the_sign']}"
+        )
+    add(f"  {lease_cost['note']}")
+    add(f"  {lease_cost['default_deployment']}")
     add("")
 
     add("Cap behaviour:")
