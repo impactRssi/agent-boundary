@@ -15,8 +15,18 @@ hostile; see ``docs/THREAT_MODEL.md``.
 """
 
 from agentboundary.broker import Broker
+from agentboundary.confinement import StoreWithinReachError
 from agentboundary.errors import BrokerError, RefusalReason, TaskConstructionError
 from agentboundary.guards import CallContext, Guard, GuardResult
+from agentboundary.leases import (
+    FileLeaseStore,
+    InMemoryLeaseStore,
+    Lease,
+    LeaseError,
+    LeaseKind,
+    LeaseStore,
+    Sensitivity,
+)
 from agentboundary.ledger import (
     FileRefusalLedger,
     LedgerEntry,
@@ -24,7 +34,6 @@ from agentboundary.ledger import (
     RefusalEvent,
     RefusalLedger,
     RefusalSubject,
-    StoreWithinReachError,
     SubjectKind,
 )
 from agentboundary.model import (
@@ -46,10 +55,16 @@ __all__ = [
     "Caps",
     "Check",
     "Decision",
+    "FileLeaseStore",
     "FileRefusalLedger",
     "Guard",
     "GuardResult",
+    "InMemoryLeaseStore",
     "Irreversibility",
+    "Lease",
+    "LeaseError",
+    "LeaseKind",
+    "LeaseStore",
     "LedgerEntry",
     "MemoryRefusalLedger",
     "Outcome",
@@ -59,6 +74,7 @@ __all__ = [
     "RefusalReason",
     "RefusalSubject",
     "ScopedTools",
+    "Sensitivity",
     "StoreWithinReachError",
     "SubjectKind",
     "Task",

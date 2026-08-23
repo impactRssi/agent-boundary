@@ -27,10 +27,10 @@ from agentboundary.approval import ApprovalGuard, ApprovalStore
 from agentboundary.audit import AuditRecord, AuditSink, MemoryAuditSink, ResultStatus
 from agentboundary.broker import Broker
 from agentboundary.budget import BudgetGuard, BudgetLedger
-from agentboundary.confinement import EgressGuard, PathConfinementGuard
+from agentboundary.confinement import EgressGuard, PathConfinementGuard, assert_out_of_reach
 from agentboundary.guards import Guard
 from agentboundary.ingest import Envelope, ingest
-from agentboundary.ledger import RefusalLedger, assert_out_of_reach, record_refusal
+from agentboundary.ledger import RefusalLedger, record_refusal
 from agentboundary.model import ProposedCall, Task
 from agentboundary.registry import ToolRegistry
 

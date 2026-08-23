@@ -46,10 +46,9 @@ from agentboundary.confinement import (
     DEFAULT_URL_ARGUMENTS,
     ConfinementError,
     resolve_candidate,
-    resolve_within,
     without_root_label,
 )
-from agentboundary.errors import BrokerError, RefusalReason
+from agentboundary.errors import RefusalReason
 from agentboundary.model import Decision, ProposedCall, Task, normalise_tool_name
 
 __all__ = [
@@ -60,9 +59,7 @@ __all__ = [
     "RefusalEvent",
     "RefusalLedger",
     "RefusalSubject",
-    "StoreWithinReachError",
     "SubjectKind",
-    "assert_out_of_reach",
     "record_refusal",
     "render",
     "subject_for",
@@ -82,16 +79,6 @@ CAVEAT: Final[str] = (
     "anything. A lease names its subject explicitly, typed by an operator, and "
     "is never derived from this list."
 )
-
-
-class StoreWithinReachError(BrokerError):
-    """A store the agent must not write lies inside a task's ``fs_root``.
-
-    Raised at construction, never at call time. An agent that can append to its
-    own refusal ledger can drown the real refusals in noise; an agent that can
-    write the lease store has no boundary at all. Same reasoning that puts the
-    audit trace out of reach.
-    """
 
 
 class SubjectKind(str, Enum):
@@ -360,41 +347,6 @@ class FileRefusalLedger:
                 if not stripped:
                     continue
                 yield RefusalEvent.from_json(json.loads(stripped))
-
-
-def assert_out_of_reach(store_path: Path, fs_root: str | None, what: str) -> None:
-    """Fail closed if ``store_path`` lies inside ``fs_root``.
-
-    Called at construction, where the configuration error actually is, rather
-    than at call time where it would be one missing check away from a hole.
-
-    Containment is decided by :func:`agentboundary.confinement.resolve_within`
-    -- the same component-wise resolution the path guard uses, not a second
-    comparison that could disagree with it. ``resolve_within`` succeeding means
-    the store is inside the root, which is the failure.
-
-    A root that cannot be resolved at all is undecidable, and undecidable
-    means refuse: a deployment that cannot prove its ledger is out of reach
-    must not run with one.
-    """
-    if fs_root is None:
-        return
-    root = Path(fs_root)
-    try:
-        resolve_within(str(store_path), root)
-    except ConfinementError:
-        return
-    except OSError as exc:
-        msg = (
-            f"{what} at {store_path} could not be compared against fs_root {fs_root!r} "
-            f"({exc}); refusing rather than assuming it is out of reach"
-        )
-        raise StoreWithinReachError(msg) from exc
-    msg = (
-        f"{what} at {store_path} resolves inside fs_root {fs_root!r}. An agent that can "
-        f"write it can forge or drown the record; place it outside every task's root."
-    )
-    raise StoreWithinReachError(msg)
 
 
 def subject_for(task: Task, proposed: ProposedCall, decision: Decision) -> RefusalSubject:
