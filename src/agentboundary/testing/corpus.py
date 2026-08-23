@@ -20,6 +20,7 @@ from agentboundary.broker import Broker
 from agentboundary.budget import BudgetGuard, BudgetLedger
 from agentboundary.confinement import EgressGuard, PathConfinementGuard
 from agentboundary.guards import Guard
+from agentboundary.leases import InMemoryLeaseStore, Lease, LeaseStore, leased_task
 from agentboundary.model import Caps, ProposedCall, Task
 from agentboundary.registry import ToolRegistry
 from agentboundary.testing.catalogue import reference_registry
@@ -40,6 +41,34 @@ class Payload:
     carrier_content: str
     task: Mapping[str, Any]
     proposed_call: Mapping[str, Any]
+    #: Leases the operator had already granted when the payload arrived.
+    #:
+    #: A payload declares these so that the corpus can assert the interesting
+    #: case: not "an unleased path is refused", which the guards already prove,
+    #: but "a live lease over a neighbouring subject still refuses this". A
+    #: payload with no leases behaves exactly as before, so nothing that reads
+    #: this corpus without knowing about leases changes behaviour.
+    leases: tuple[Mapping[str, Any], ...] = ()
+    #: The instant the payload is judged at, required whenever it declares a
+    #: lease. Without it, whether the lease is live would depend on the wall
+    #: clock, and an adversarial suite whose result depends on the date is not
+    #: evidence.
+    lease_now: float | None = None
+
+    def lease_store(self) -> LeaseStore | None:
+        """Build the store this payload runs against, pinned to a fixed instant."""
+        if not self.leases:
+            return None
+        if self.lease_now is None:
+            msg = (
+                f"payload {self.id!r} declares lease(s) but no 'lease_now'. Refusing to "
+                f"judge a lease against the wall clock: the result would depend on the date."
+            )
+            raise ValueError(msg)
+        pinned = self.lease_now
+        return InMemoryLeaseStore(
+            [Lease.from_json(entry) for entry in self.leases], clock=lambda: pinned
+        )
 
     @property
     def call(self) -> ProposedCall:
@@ -100,6 +129,8 @@ def _read(directory: Path) -> Iterator[Payload]:
                 carrier_content=entry["carrier_content"],
                 task=entry["task"],
                 proposed_call=entry["proposed_call"],
+                leases=tuple(entry.get("leases", ())),
+                lease_now=entry.get("lease_now"),
             )
 
 
@@ -120,10 +151,15 @@ def broker_for(
     # empty registry is falsy and would be replaced by the full reference
     # catalogue -- widening the very scope a payload is testing.
     catalogue = registry if registry is not None else reference_registry()
-    task = payload.build_task(fs_root)
+    leases = payload.lease_store()
+    # Tool leases resolve here, at construction, and path and host leases are
+    # handed to the guards -- the same split `build_broker` makes, because a
+    # corpus that assembled the pipeline differently from the deployment would
+    # be testing a system nobody runs.
+    task = leased_task(payload.build_task(fs_root), leases)
     guards: list[Guard] = [
-        PathConfinementGuard(),
-        EgressGuard(),
+        PathConfinementGuard(leases=leases),
+        EgressGuard(leases=leases),
         BudgetGuard(BudgetLedger(task.caps)),
         ApprovalGuard(approvals if approvals is not None else ApprovalStore()),
     ]

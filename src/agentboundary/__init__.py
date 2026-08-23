@@ -26,6 +26,7 @@ from agentboundary.leases import (
     LeaseKind,
     LeaseStore,
     Sensitivity,
+    leased_task,
 )
 from agentboundary.ledger import (
     FileRefusalLedger,
@@ -82,6 +83,7 @@ __all__ = [
     "Tool",
     "ToolRegistry",
     "__version__",
+    "leased_task",
 ]
 
 __version__ = "0.2.3"

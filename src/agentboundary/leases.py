@@ -42,14 +42,14 @@ import math
 import os
 import threading
 from collections.abc import Callable, Iterable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import Enum
 from pathlib import Path
 from typing import Any, Final
 
 from agentboundary.confinement import ConfinementError, resolve_candidate, without_root_label
 from agentboundary.errors import BrokerError
-from agentboundary.model import normalise_tool_name
+from agentboundary.model import Task, normalise_tool_name
 
 __all__ = [
     "MAX_DURATION_S",
@@ -61,6 +61,7 @@ __all__ = [
     "LeaseStore",
     "Sensitivity",
     "describe",
+    "leased_task",
 ]
 
 
@@ -456,6 +457,24 @@ class LeaseStore:
             if lease.kind is kind and lease.applies_to_task(task_id) and lease.is_active(instant)
         )
 
+    def active_paths(self, task_id: str, now: float | None = None) -> tuple[Lease, ...]:
+        """Path leases in force for this task. What ``PathConfinementGuard`` asks for.
+
+        The three ``active_*`` accessors exist so that a guard can consult the
+        store without importing :class:`LeaseKind` -- which would put an import
+        edge from ``confinement`` back to this module, and this module already
+        depends on ``confinement`` for host normalisation. One direction only.
+        """
+        return self.active(LeaseKind.PATH, task_id, now)
+
+    def active_hosts(self, task_id: str, now: float | None = None) -> tuple[Lease, ...]:
+        """Host leases in force for this task. What ``EgressGuard`` asks for."""
+        return self.active(LeaseKind.HOST, task_id, now)
+
+    def active_tools(self, task_id: str, now: float | None = None) -> tuple[Lease, ...]:
+        """Tool leases in force. Read once, at task construction -- see ``leased_task``."""
+        return self.active(LeaseKind.TOOL, task_id, now)
+
     def expired(self, now: float | None = None) -> tuple[Lease, ...]:
         """Leases whose window has closed. The input to rotation advice."""
         instant = self.now() if now is None else now
@@ -555,3 +574,42 @@ def describe(leases: Sequence[Lease], now: float) -> str:
             f"{lease.granted_by:<24} {state}"
         )
     return "\n".join(lines)
+
+
+def leased_task(task: Task, store: LeaseStore | None, now: float | None = None) -> Task:
+    """Return the task a tool lease produces, resolved **at construction time only**.
+
+    This is the design tension of the whole feature, so it is stated rather than
+    hidden.
+
+    Path and host leases are consulted at call time by the confinement guards,
+    because those guards check an argument and a lease widens an argument check.
+    Tool leases cannot work that way. I1 is the property that an out-of-scope
+    tool has *no handle*: it is absent from the schema the model is shown and
+    absent from the dispatch table. A tool that appeared in the dispatch table
+    partway through a session would convert I1 from a structural property into a
+    call-time filter, which is exactly what ADR-0002 rejects.
+
+    So a tool lease is applied here, once, before the broker exists, producing a
+    new frozen :class:`~agentboundary.model.Task`. Nothing is mutated: the task
+    the broker holds is fixed for its whole life, as it always was.
+
+    **The consequence, stated rather than hidden: a tool lease that expires
+    mid-task keeps its handle until the task ends.** The lease's expiry bounds
+    when a *new* task may be constructed with that tool, not when a running one
+    loses it. Tool leases should therefore be short, and the task's caps are what
+    bound a task that outlives one. An operator who needs the capability gone now
+    ends the task; there is no mechanism here that removes it from a live one,
+    and adding one would be the call-time filter ADR-0002 rejects.
+
+    A leased tool the registry does not know still fails task construction,
+    loudly, in ``ToolRegistry.scope_for``. A lease cannot conjure a capability
+    the deployment never registered.
+    """
+    if store is None:
+        return task
+    instant = store.now() if now is None else now
+    leased = frozenset(lease.subject for lease in store.active_tools(task.id, instant))
+    if not leased:
+        return task
+    return replace(task, tool_scope=task.tool_scope | leased)

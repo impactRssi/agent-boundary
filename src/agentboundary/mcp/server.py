@@ -30,6 +30,7 @@ from agentboundary.budget import BudgetGuard, BudgetLedger
 from agentboundary.confinement import EgressGuard, PathConfinementGuard, assert_out_of_reach
 from agentboundary.guards import Guard
 from agentboundary.ingest import Envelope, ingest
+from agentboundary.leases import LeaseStore, leased_task
 from agentboundary.ledger import RefusalLedger, record_refusal
 from agentboundary.model import ProposedCall, Task
 from agentboundary.registry import ToolRegistry
@@ -88,7 +89,7 @@ class BrokeredServer:
         # A refusal ledger is an operator artifact: silently substituting an
         # in-process one would report an empty ledger to whoever went looking.
         if refusals is not None:
-            _assert_ledger_out_of_reach(refusals, broker.task)
+            _assert_store_out_of_reach(refusals, broker.task, "refusal ledger")
         self._refusals = refusals
         self._sequence = 0
 
@@ -172,32 +173,49 @@ def build_broker(
     registry: ToolRegistry,
     approvals: ApprovalStore | None = None,
     ledger: BudgetLedger | None = None,
+    leases: LeaseStore | None = None,
 ) -> Broker:
     """Assemble the standard guard pipeline for a task.
 
     One place, so a deployment cannot accidentally stand up a broker missing a
     guard. Adding a guard here reaches every transport at once.
+
+    Leases enter at two different times, and the difference is deliberate
+    (N-43). Tool leases are resolved **here**, once, by :func:`leased_task`, so
+    the task the broker holds is fixed for its whole life and an out-of-scope
+    tool still has no handle -- I1 stays structural, as ADR-0002 requires. Path
+    and host leases are handed to the confinement guards, which consult them at
+    call time, because a lease widens an argument check and an argument check is
+    what those guards perform.
+
+    The consequence of the first is stated in :func:`leased_task` and repeated
+    here because it is the kind of thing that gets lost: a tool lease that
+    expires mid-task keeps its handle until the task ends.
     """
+    _assert_store_out_of_reach(leases, task, "lease store")
+    scoped = leased_task(task, leases)
     guards: list[Guard] = [
-        PathConfinementGuard(),
-        EgressGuard(),
-        BudgetGuard(ledger if ledger is not None else BudgetLedger(task.caps)),
+        PathConfinementGuard(leases=leases),
+        EgressGuard(leases=leases),
+        BudgetGuard(ledger if ledger is not None else BudgetLedger(scoped.caps)),
         ApprovalGuard(approvals if approvals is not None else ApprovalStore()),
     ]
-    return Broker(task, registry.scope_for(task), guards)
+    return Broker(scoped, registry.scope_for(scoped), guards)
 
 
-def _assert_ledger_out_of_reach(refusals: RefusalLedger, task: Task) -> None:
-    """Refuse to attach a ledger the task's own tools could write.
+def _assert_store_out_of_reach(store: object | None, task: Task, what: str) -> None:
+    """Refuse to attach a store the task's own tools could write.
 
-    Checked by asking the ledger where it lives rather than by testing its
+    Checked by asking the store where it lives rather than by testing its
     concrete type, so a deployment's own file-backed implementation is held to
-    the same rule as :class:`~agentboundary.ledger.FileRefusalLedger`. A ledger
-    that keeps nothing on disk exposes no ``path`` and has nothing to check.
+    the same rule as the ones shipped here. A store that keeps nothing on disk
+    exposes no ``path`` and has nothing to check.
     """
-    location = getattr(refusals, "path", None)
+    if store is None:
+        return
+    location = getattr(store, "path", None)
     if isinstance(location, Path):
-        assert_out_of_reach(location, task.fs_root, "refusal ledger")
+        assert_out_of_reach(location, task.fs_root, what)
 
 
 def build_server(
@@ -207,6 +225,8 @@ def build_server(
     approvals: ApprovalStore | None = None,
     audit: AuditSink | None = None,
     refusals: RefusalLedger | None = None,
+    leases: LeaseStore | None = None,
 ) -> BrokeredServer:
     """Build a brokered server for one task."""
-    return BrokeredServer(build_broker(task, registry, approvals), handlers, audit, refusals)
+    broker = build_broker(task, registry, approvals, leases=leases)
+    return BrokeredServer(broker, handlers, audit, refusals)

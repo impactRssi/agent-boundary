@@ -13,13 +13,20 @@ from __future__ import annotations
 
 import ipaddress
 import os
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
-from typing import Any, Final
+from typing import TYPE_CHECKING, Any, Final
 from urllib.parse import urlsplit
 
 from agentboundary.errors import BrokerError, RefusalReason
 from agentboundary.guards import CallContext, GuardResult
+
+if TYPE_CHECKING:  # pragma: no cover -- import for typing only
+    # Typing-only, deliberately. `agentboundary.leases` imports
+    # `without_root_label` from this module, so a runtime import here would be a
+    # cycle. The guards need no lease type at run time: the store answers with
+    # `active_paths` and `active_hosts`, which is why those accessors exist.
+    from agentboundary.leases import Lease, LeaseStore
 
 __all__ = [
     "ALLOWED_SCHEMES",
@@ -49,6 +56,11 @@ DEFAULT_URL_ARGUMENTS: Final[frozenset[str]] = frozenset({"url", "uri", "endpoin
 #: Anything not here is refused rather than passed through: file://, gopher://
 #: and data: have all been exfiltration channels in someone's incident report.
 ALLOWED_SCHEMES: Final[frozenset[str]] = frozenset({"http", "https"})
+
+#: The base a lease subject is resolved against. Subjects are absolute by
+#: construction (see ``agentboundary.leases``), so this only satisfies the
+#: signature of ``resolve_candidate``; it never anchors anything.
+_FILESYSTEM_ROOT: Final[Path] = Path(os.sep)
 
 
 class ConfinementError(Exception):
@@ -197,18 +209,82 @@ def resolve_within(candidate: str, root: Path) -> Path:
     return resolved
 
 
+def _admitting_lease(resolved: Path, leases: Sequence[Lease]) -> Lease | None:
+    """The first lease whose subject contains ``resolved``, or ``None``.
+
+    The leased subject is resolved with the same component-wise walk the task
+    root gets, and containment is the same :func:`contains`. There is no second
+    path comparison in this package, which is the only reason this can be
+    claimed to behave like the root check rather than merely to resemble it.
+
+    A lease whose subject cannot be resolved -- a symlink loop, an unreadable
+    parent -- admits nothing and is skipped. Undecidable means refuse, and that
+    applies to the widening just as much as to the confinement.
+    """
+    for lease in leases:
+        try:
+            leased_root = resolve_candidate(lease.subject, _FILESYSTEM_ROOT)
+        except (ConfinementError, OSError):
+            continue
+        if contains(leased_root, resolved):
+            return lease
+    return None
+
+
+def _outside_root(
+    argument: str, value: str, resolved: Path, root: Path, leased: bool
+) -> GuardResult:
+    """The one refusal an out-of-root path produces, lease consulted or not.
+
+    The reason is ``path_outside_root`` either way, because that is what
+    happened. Whether a lease was consulted goes in the detail, where an
+    operator triaging can see it without the reason string shifting under them.
+    """
+    consulted = "no lease admits it" if leased else "no lease store is attached to this task"
+    return GuardResult.refuse(
+        RefusalReason.PATH_OUTSIDE_ROOT,
+        f"argument {argument!r}: {value!r} resolves to {resolved} which is outside root "
+        f"{root} and {consulted}",
+    )
+
+
 class PathConfinementGuard:
     """Refuses any path argument that resolves outside the task's root (I4).
 
     Runs before a handler is reached, so refusal precedes any file being opened
     (FR-011). A task with no ``fs_root`` refuses every path argument outright:
     a task that did not declare a root did not ask for filesystem access.
+
+    **Path leases (N-43).** An optional lease store widens this check, and only
+    this check. The store is consulted at call time, which is where it belongs:
+    a lease widens an argument check, and an argument check is what this guard
+    performs. Three properties bound what a lease can do here:
+
+    * It is consulted **only on the refusal branch**. A path already inside the
+      root never reaches the store, so an unreadable store cannot break ordinary
+      work, and a lease can never turn an authorisation into something else.
+    * Admission is decided by :func:`contains` against the **resolved** leased
+      subject -- the same resolution and the same containment test the root gets.
+      A lease over ``/x/secrets`` therefore does not admit ``/x/secrets-backup``,
+      does not admit ``/x``, and does not admit a traversal out of it, because
+      ``relative_to`` says so and no string comparison is involved. A symlink
+      that resolves *into* the leased directory is admitted, which is what
+      "resolve, then compare" means.
+    * A task with no ``fs_root`` is refused before the store is reached. A path
+      lease widens a root; a task with no root has no root to widen, and
+      anchoring a relative argument at ``/`` to make one up would authorise a
+      location the handler would never open.
     """
 
-    __slots__ = ("_argument_names",)
+    __slots__ = ("_argument_names", "_leases")
 
-    def __init__(self, argument_names: Iterable[str] = DEFAULT_PATH_ARGUMENTS) -> None:
+    def __init__(
+        self,
+        argument_names: Iterable[str] = DEFAULT_PATH_ARGUMENTS,
+        leases: LeaseStore | None = None,
+    ) -> None:
         self._argument_names = frozenset(argument_names)
+        self._leases = leases
 
     @property
     def name(self) -> str:
@@ -227,21 +303,64 @@ class PathConfinementGuard:
             )
 
         root = Path(context.task.fs_root)
+        # Resolved lazily and then reused, so one decision cannot straddle two
+        # instants: a store read twice could find a lease live for the first
+        # argument of a call and expired for the second.
+        leased: tuple[Lease, ...] | None = None
+        admitted: list[str] = []
+
         for argument, value in sorted(candidates.items()):
             try:
-                resolve_within(value, root)
+                resolved_root = root.resolve(strict=True)
+                resolved = resolve_candidate(value, resolved_root)
             except ConfinementError as exc:
                 return GuardResult.refuse(
                     RefusalReason.PATH_OUTSIDE_ROOT, f"argument {argument!r}: {exc}"
                 )
             except OSError as exc:
                 # Resolution itself failed -- a symlink loop, a permission
-                # error on a parent. Undecidable, therefore refused.
+                # error on a parent. Undecidable, therefore refused, and no
+                # lease widens an answer resolution never produced.
                 return GuardResult.refuse(
                     RefusalReason.PATH_OUTSIDE_ROOT,
                     f"argument {argument!r}: could not be resolved ({exc}); refusing rather "
                     f"than proceeding on an unresolved path",
                 )
+
+            if contains(resolved_root, resolved):
+                continue
+
+            if self._leases is None:
+                return _outside_root(argument, value, resolved, resolved_root, leased=False)
+
+            if leased is None:
+                try:
+                    leased = self._leases.active_paths(context.task.id, self._leases.now())
+                except Exception as exc:  # An unreadable store must not widen anything.
+                    # Fails closed with the reason the argument actually earned:
+                    # the path is outside the root and could not be widened.
+                    return GuardResult.refuse(
+                        RefusalReason.PATH_OUTSIDE_ROOT,
+                        f"argument {argument!r}: {value!r} is outside root {resolved_root} and "
+                        f"the lease store could not be read ({type(exc).__name__}: {exc}); "
+                        f"refusing rather than proceeding on an unknown grant",
+                    )
+
+            admitting = _admitting_lease(resolved, leased)
+            if admitting is None:
+                return _outside_root(argument, value, resolved, resolved_root, leased=True)
+            admitted.append(
+                f"{argument}={resolved} under lease on {admitting.subject!r} "
+                f"granted by {admitting.granted_by!r}"
+            )
+
+        if admitted:
+            # Named in the check detail, because an operator reading a trace has
+            # to be able to see that a boundary was moved and by whom.
+            return GuardResult.ok(
+                f"{len(candidates)} path argument(s) admitted, {len(admitted)} by lease: "
+                + "; ".join(admitted)
+            )
         return GuardResult.ok(f"{len(candidates)} path argument(s) within root")
 
 
@@ -258,12 +377,26 @@ class EgressGuard:
     on both sides -- never a suffix or a pattern. A suffix rule turns one
     allowlisted host into every host beneath it, including the one an attacker
     registers.
+
+    **Host leases (N-43).** An optional lease store adds entries to the
+    allowlist for the duration of a lease, and adds nothing else. It is
+    consulted at exactly one branch -- the membership test -- so a lease does
+    not widen the scheme allowlist, does not admit a URL with no host, does not
+    excuse an address literal carrying a root label, and does not disable the
+    loopback and link-local refusal, which still runs afterwards. Matching stays
+    exact on the same normalised key, so a lease on ``docs.internal`` admits
+    ``docs.internal`` and not ``docs.internal.evil.example``.
     """
 
-    __slots__ = ("_argument_names",)
+    __slots__ = ("_argument_names", "_leases")
 
-    def __init__(self, argument_names: Iterable[str] = DEFAULT_URL_ARGUMENTS) -> None:
+    def __init__(
+        self,
+        argument_names: Iterable[str] = DEFAULT_URL_ARGUMENTS,
+        leases: LeaseStore | None = None,
+    ) -> None:
         self._argument_names = frozenset(argument_names)
+        self._leases = leases
 
     @property
     def name(self) -> str:
@@ -275,14 +408,31 @@ class EgressGuard:
             return GuardResult.ok("no url arguments")
 
         allowlist = context.task.egress_allowlist
+        # One instant for the whole call, for the same reason as the path guard.
+        # `None` means no store is attached, which the refusal detail must
+        # distinguish from a store that was consulted and had nothing to say.
+        leased: frozenset[str] | None = None
+        if self._leases is not None:
+            try:
+                leased = frozenset(
+                    lease.subject
+                    for lease in self._leases.active_hosts(context.task.id, self._leases.now())
+                )
+            except Exception as exc:  # An unreadable store must not widen anything.
+                return GuardResult.refuse(
+                    RefusalReason.EGRESS_HOST_NOT_ALLOWED,
+                    f"the lease store could not be read ({type(exc).__name__}: {exc}); "
+                    f"refusing egress rather than proceeding on an unknown grant",
+                )
+
         for argument, value in sorted(candidates.items()):
-            refusal = self._check_one(argument, value, allowlist)
+            refusal = self._check_one(argument, value, allowlist, leased)
             if refusal is not None:
                 return refusal
         return GuardResult.ok(f"{len(candidates)} destination(s) allowlisted")
 
     def _check_one(
-        self, argument: str, value: str, allowlist: frozenset[str]
+        self, argument: str, value: str, allowlist: frozenset[str], leased: frozenset[str] | None
     ) -> GuardResult | None:
         try:
             parts = urlsplit(value)
@@ -326,11 +476,21 @@ class EgressGuard:
                 f"root label, which different clients resolve to different destinations",
             )
 
-        if candidate not in {without_root_label(entry.lower()) for entry in allowlist}:
+        permitted = {without_root_label(entry.lower()) for entry in allowlist} | (
+            leased or frozenset()
+        )
+        if candidate not in permitted:
+            if leased is None:
+                leases_note = "; no lease store is attached to this task"
+            elif leased:
+                leases_note = f"; lease(s) in force for {', '.join(sorted(leased))}"
+            else:
+                leases_note = "; no host lease in force"
             return GuardResult.refuse(
                 RefusalReason.EGRESS_HOST_NOT_ALLOWED,
                 f"argument {argument!r}: host {host!r} is not allowlisted "
-                f"({', '.join(sorted(allowlist)) or 'allowlist is empty: egress denied'})",
+                f"({', '.join(sorted(allowlist)) or 'allowlist is empty: egress denied'})"
+                f"{leases_note}",
             )
 
         # An allowlisted *name* that resolves to a loopback or link-local
