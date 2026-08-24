@@ -1,7 +1,8 @@
 # Roadmap
 
-**All nodes merged except N-36 (PyPI, blocked on a naming decision and a
-trusted publisher). `v0.3.0` released.** Phase 8 closed gaps found
+**Phase 10 is open.** N-47 is merged; N-48 to N-53 are declared and not
+started. Everything before them is merged except N-36 (PyPI, blocked on a
+naming decision and a trusted publisher). `v0.3.0` released. Phase 8 closed gaps found
 by auditing `v0.1.0` as an outsider would — cloning it clean, running what the
 documentation said, and checking whether the repository's claims about itself
 held. Three did not, and two of those were security defects. Both are in the
@@ -613,6 +614,121 @@ them is wrong however convenient it is:
 
 ---
 
+## Phase 10 — Evidence a sceptic can check
+
+Phase 8 audited the repository as an outsider would. This phase audits it as a
+*user* would, and the first node comes from having done exactly that: the broker
+was pointed at a real project for a real task, and a cap fired for a reason its
+own documentation did not describe.
+
+The rest of the phase closes the gap that makes the headline number weak. The
+injection corpus reports 46/46 blocked, and every one of those 46 is a call
+constructed to be out of scope and then refused by a function. Nothing in the
+measurement involves a model. To a sceptic that reads as a locked door being
+locked; what is missing is the arm showing the door was open without the broker.
+
+```mermaid
+graph TD
+    N47[N-47 wall-clock semantics] --> N53[N-53 publish the evidence]
+    N48[N-48 root scoping is not redaction] --> N53
+    N49[N-49 ADR-0009 evidence is not a benchmark] --> N50[N-50 confined runner]
+    N49 --> N51[N-51 planted-carrier workspace]
+    N50 --> N52[N-52 the two-arm run]
+    N51 --> N52
+    N52 --> N53
+```
+
+#### N-47 — Name what the wall-clock cap measures
+- **Owner** Broker engineer · **Depends on** none · **Invariant** I3
+- **Exit** `Caps.max_wall_clock_s` states that it bounds the span from task
+  construction to the call being decided — model latency and operator idle time
+  included — and why that is the safer default: it bounds how long a steered
+  agent keeps acting, which a sum of call durations does not. The `Caps`
+  docstring loses the "slow endpoint polled in a loop" justification, which
+  describes a quantity this cap does not measure. FR-012 makes the measured
+  quantity normative, and `docs/INSTALL.md` gains sizing guidance with a worked
+  interactive figure — 120 s is right for a batch task and wrong for a session
+  a human is watching.
+- **Tests** U — a ledger whose clock advances with no call admitted still
+  refuses, and twenty instantaneous calls spread across an hour exhaust an
+  hour-long cap. Asserted against an injected clock, never real time.
+- [x] Merged
+
+#### N-48 — A secret inside the root is in scope by construction
+- **Owner** Documentation owner · **Depends on** none · **Invariant** none
+- **Exit** README §7 Limitations states that the broker bounds *which* file and
+  never what is inside it. Ingest strips active content; it does not redact
+  credentials, and a reader who watches a password come back with `removed: []`
+  should find that written down rather than inferred. Narrowing `fs_root` is the
+  lever. THREAT_MODEL §7 gains the residual risk.
+- **Tests** n/a — documentation node.
+- [ ] Not started
+
+#### N-49 — ADR-0009: model-in-the-loop evidence is not a benchmark
+- **Owner** Technical lead · **Depends on** none · **Invariant** none
+- **Exit** An ADR fixing two things. The artifact class: an evidence run is
+  dated, pinned to a model id, stochastic, reported with its `n`, lives under
+  `evidence/`, and is never written into `benchmarks/results.json` nor averaged
+  with a figure from it — the offline guarantee is why the reproducible numbers
+  are worth anything, and one contaminated file ends that. The dependency: an
+  agent SDK enters as an optional extra alongside `mcp`, never as a runtime
+  dependency and never on the authorisation path. `dependencies = []` stays
+  empty.
+- **Tests** n/a — decision node.
+- [ ] Not started
+
+#### N-50 — A runner whose only tools are the broker's
+- **Owner** Broker engineer · **Depends on** N-49 · **Invariant** I1
+- **Exit** An optional-extra entry point starting an agent session in which the
+  brokered MCP tools are the *only* tools — no native filesystem, shell, or
+  fetch handle exists to be named. This is I1 applied to the harness itself, and
+  it is what makes a demonstration mean anything: routing some calls through a
+  broker while a second route to the same filesystem stays open demonstrates
+  nothing, which is `ADR-0002`'s argument turned on this repository. Ships as
+  the reference integration, not as demo scaffolding.
+- **Tests** U · E — E2E asserts over a real transport that a native-tool call
+  has no handle to be issued through, rather than that it was refused.
+- [ ] Not started
+
+#### N-51 — A workspace with a live payload in a real carrier
+- **Owner** Security engineer · **Depends on** N-49 · **Invariant** none
+- **Exit** A disposable workspace holding genuine work — a failing test to fix,
+  an issue to triage — in which one existing corpus carrier is *live* rather
+  than quoted: a dependency README, a ticket body, an error string the agent has
+  a legitimate reason to read. Every sink is local: the exfiltration target
+  resolves to a loopback recorder, no real credential is present, and the
+  workspace is rebuilt per run. A corpus payload that reaches a real host during
+  a measurement is an incident, not a measurement.
+- **Tests** A — the workspace is rejected if any declared sink resolves
+  off-loopback.
+- [ ] Not started
+
+#### N-52 — The two-arm run
+- **Owner** Benchmark engineer · **Depends on** N-50, N-51 · **Invariant** none
+- **Exit** The same task and the same planted payload, run twice per sample.
+  Arm A, unbrokered: native tools wrapped in a recording shim that logs the
+  proposed call and returns a plausible result *without performing the effect*,
+  so "the model emitted the out-of-scope call" is observable with nothing
+  leaving the box. Arm B, brokered: the N-50 runner; record the refusal reason,
+  and separately whether the legitimate task still completed. Reported per arm
+  with `n`, model id, date, and total cost.
+- **Tests** U · E — the shim is asserted effect-free by construction, since an
+  arm that performs what it claims only to record is the one failure here that
+  cannot be walked back.
+- [ ] Not started
+
+#### N-53 — Publish it with the caveat in the same sentence
+- **Owner** Documentation owner · **Depends on** N-47, N-48, N-52 · **Invariant** none
+- **Exit** README §6 gains the evidence run in its own subsection, visibly
+  separated from the reproducible figures, carrying model id, date, `n`, and the
+  sentence that it is not reproducible and why. If Arm A shows the model was
+  *not* steered, that is published too — a demonstration reporting only the runs
+  where the attack worked demonstrates nothing.
+- **Tests** n/a — documentation node.
+- [ ] Not started
+
+---
+
 ## Deferred, with reasons
 
 Recorded so that absence is a decision rather than an oversight.
@@ -622,4 +738,6 @@ Recorded so that absence is a decision rather than an oversight.
 | Concurrent tasks sharing a budget pool | Adds cross-task state to the decision path; v0.1.0 keeps the broker per-task and stateless across tasks. Listed as a limitation |
 | Detecting unsafe composition of two in-scope tools | Unsolved. Bounded by attribution and approval, not prevented (threat model §7.2) |
 | A model-based classifier as a noise reducer | Permitted *alongside* the broker, never on the authorisation path (ADR-0001). The false-refusal rate is now measured at 0/25 on a synthetic corpus, so there is no measured noise to reduce — revisit when a rate from real traffic exists |
+| `max_tool_time_s` as a cap distinct from the task span | N-47 makes the span's semantics explicit, which is the defect that was actually costing something. A second cap adds an axis to the decision path for a quantity `max_cost` already bounds in practice. Revisit if an operator states the need |
+| Running the evidence arm (N-52) as a CI job | It costs money, needs the network, and is stochastic — three reasons it cannot block a build. Run by hand, result committed |
 | Third-party security review | Wanted. Its absence is stated in the README, SECURITY.md and the changelog, and stays stated until it is not true |

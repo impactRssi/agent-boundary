@@ -123,7 +123,10 @@ Machine-readable and stable; they are part of the interface.
 ### 4.4 Budget and bounding — I3
 
 - **FR-012** The broker MUST enforce per-task hard caps on call count,
-  cumulative cost, and wall-clock time.
+  cumulative cost, and elapsed task span. The span MUST be measured from task
+  construction to the call being decided, and MUST NOT be accumulated from the
+  durations of individual calls: what the cap bounds is how long a task may
+  keep acting, and time an agent spends waiting is time it can still act in.
 - **FR-013** On reaching any cap the broker MUST refuse with
   `budget_exhausted`, terminate the task in an explicitly failed state, and
   report that state. It MUST NOT continue in a degraded mode and MUST NOT stop

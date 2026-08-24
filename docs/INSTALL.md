@@ -112,6 +112,34 @@ not unrestricted egress. A missing cap is an error rather than a generous
 default: an operator who forgot to set a limit has not decided there should be
 none.
 
+### Size `max_wall_clock_s` for the span, not for the work
+
+`max_wall_clock_s` bounds the time from task construction to the call being
+decided. That span includes model latency and any time a human spends reading
+between turns. It is **not** a sum of how long the calls themselves took.
+
+The distinction matters once, and sharply. A batch task issuing twenty calls
+back to back may finish inside 120 s. The same twenty calls issued by an agent
+a human is watching can span half an hour, nearly all of it spent waiting on
+the model or on the person — and the cap will fire with the task having spent
+under a second inside the broker. The refusal is correct, the task is dead, and
+nothing the operator configured says that is what they asked for.
+
+| Deployment | Starting point |
+|---|---|
+| Batch or CI, no human in the loop | 120 s |
+| Interactive session, human reading between turns | 1800 s |
+
+Both are numbers we chose to be survivable for their shape of task, not figures
+derived from a measurement, and both are starting points to narrow against what
+your task actually does rather than defaults to adopt.
+
+Bounding the span rather than the call time is deliberate. What needs a limit is
+how long a steered agent may keep acting, and an agent idling between two cheap
+calls is still able to act; a cap over call durations would leave that
+unbounded. If your task legitimately runs long, raise the number and say why in
+the file — do not reach for a cap that measures something easier to satisfy.
+
 ### Check it before serving
 
 ```bash
