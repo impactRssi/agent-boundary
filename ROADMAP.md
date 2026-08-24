@@ -675,8 +675,13 @@ graph TD
   agent SDK enters as an optional extra alongside `mcp`, never as a runtime
   dependency and never on the authorisation path. `dependencies = []` stays
   empty.
-- **Tests** n/a — decision node.
-- [ ] Not started
+- **Tests** U — declared `n/a` on the grounds that a decision node builds
+  nothing, and revised while writing it: two clauses are mechanically checkable,
+  and a rule about file contents that nothing checks is a comment. The empty
+  dependency list, the absence of third-party imports outside the optional MCP
+  adapter, and the absence of model-derived fields in `results.json` are
+  asserted, each with a companion test proving the guard can fail.
+- [x] Merged
 
 #### N-50 — A runner whose only tools are the broker's
 - **Owner** Broker engineer · **Depends on** N-49 · **Invariant** I1

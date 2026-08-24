@@ -19,3 +19,4 @@ expect to have been argued.
 | [0006](ADR-0006-adversarial-suite-is-a-separate-blocking-job.md) | The adversarial suite is a separate, guarded, blocking job | Accepted |
 | [0007](ADR-0007-pipeline-pinning-is-checked-not-prevented.md) | Action pinning is checked, not made impossible | Accepted |
 | [0008](ADR-0008-permission-leases-are-bounded-by-construction.md) | Permission leases are bounded by construction, and a refusal grants nothing | Accepted |
+| [0009](ADR-0009-model-in-the-loop-evidence-is-not-a-benchmark.md) | Model-in-the-loop evidence is not a benchmark, and never shares a file with one | Accepted |
