@@ -171,7 +171,9 @@ control that decides. See §7.
 
 ### I3 — Every side-effecting call is bounded and attributable
 
-Hard caps per task on call count, cumulative cost, and wall-clock time. Every
+Hard caps per task on call count, cumulative cost, and elapsed task span --
+measured from task construction, so it bounds how long the task may keep acting
+rather than the time it spends inside calls (FR-012). Every
 call is logged with the task id, the arguments **after** validation, and the
 decision path that produced authorisation. Calls classified as irreversible
 require out-of-band human approval; the approval is not something the model can
@@ -185,6 +187,11 @@ Path resolution is confined to an explicit root, after symlink resolution and
 normalisation — not by pattern-matching the requested path. Network egress goes
 through an allowlist of hosts. A request outside either confinement does not
 fail late at the syscall; it is not constructible.
+
+*Consequence, stated honestly:* confinement decides **where** a path may
+resolve, never what the file there holds. A secret inside the root is read by a
+correctly authorised call, and ingest is not a redaction layer. Narrowing the
+root is the control; see §7, item 24.
 
 ---
 
@@ -342,6 +349,18 @@ is marketing.
     in `benchmarks/results.json` was measured with no lease store attached, so
     it says nothing about the cost of re-reading a `FileLeaseStore` on the
     refusal branch of a path or host check. Not measured, therefore not claimed.
+24. **A secret inside `fs_root` is disclosed by a correctly authorised read.**
+    I4 confines *where* a path may resolve and says nothing about what the file
+    there holds. A task scoped to a repository root that contains a `.env` will
+    read that `.env` if the agent is steered toward it, and the broker is right
+    to allow it — confinement decided the path, not the contents. The ingest
+    path (I2) strips active content and tags provenance; it is not a redaction
+    layer and was never specified as one, so `"removed": []` on a file full of
+    credentials is the specified behaviour rather than a miss. The operator's
+    lever is `fs_root`: the narrowest directory the task actually needs, rather
+    than the repository it happens to sit in. Once a secret has been read, item
+    19's rotation advice applies — the disclosure is not recoverable, and the
+    trace will show the path was authorised without showing what came back.
 
 ---
 

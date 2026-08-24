@@ -434,20 +434,30 @@ Read this section. It is the one that tells you whether this is useful to you.
    safe.** If you scope a tool that can delete production data, a steered agent
    can delete production data within its budget. The broker bounds *which* tool
    and *with what arguments* — never what a permitted tool does internally.
-2. **Composition of in-scope tools is not analysed.** Two individually harmless
+2. **The root bounds which file, never what is inside it.** A credential sitting
+   in a file inside `fs_root` is in scope by construction: the tool is
+   allowlisted, the path resolves inside the root, and the broker returns the
+   contents. Ingest strips active content — scripts, event handlers, dangerous
+   URI schemes — and tags provenance; it does **not** redact secrets, and a
+   reader who watches an API key come back under `"removed": []` is seeing the
+   design work as specified rather than fail. Your levers are `fs_root` — the
+   narrowest directory the task actually needs, not the repository it happens to
+   sit in — and keeping secrets out of that directory. Nothing downstream of a
+   read can un-disclose what it returned.
+3. **Composition of in-scope tools is not analysed.** Two individually harmless
    tools — read an internal document, file a public ticket — compose into an
    exfiltration path. That is bounded by attribution and approval, not
    prevented. Detecting it is unsolved here.
-3. **Data labelling is mitigation, not proof.** Delimiting and provenance
+4. **Data labelling is mitigation, not proof.** Delimiting and provenance
    tagging reduce the rate at which payloads steer the model. They do not bound
    it, and the design does not depend on them holding — which is why
    authorisation lives in the broker rather than in the labelling.
-4. **An allowlisted egress host can be an exfiltration channel** if it accepts
+5. **An allowlisted egress host can be an exfiltration channel** if it accepts
    attacker-readable content. Narrowing the allowlist is your lever.
-5. **No defence against a malicious operator**, by design. Whoever configures
+6. **No defence against a malicious operator**, by design. Whoever configures
    the task, the allowlist, and the approval policy is trusted.
-6. **No claim about model alignment.** The design assumes the model is hostile.
-7. **A permission lease is a hole you opened on purpose, and while it is open
+7. **No claim about model alignment.** The design assumes the model is hostile.
+8. **A permission lease is a hole you opened on purpose, and while it is open
    the boundary is not there.** An operator can widen a task to one extra path,
    host, or tool for a stated period. **A leased path is an unbounded path for
    the duration** — during the window, the invariant the lease widens does not
@@ -462,14 +472,14 @@ Read this section. It is the one that tells you whether this is useful to you.
    granting requires the subject to be typed rather than picked from it. See
    [`ADR-0008`](docs/adr/ADR-0008-permission-leases-are-bounded-by-construction.md)
    and [`docs/THREAT_MODEL.md`](docs/THREAT_MODEL.md) §7, items 15–23.
-8. **Both benign-task corpora are synthetic, and neither is independent.** The
+9. **Both benign-task corpora are synthetic, and neither is independent.** The
    hand-written one I wrote knowing what the controls check, so its 0/25 reads
    as "no benign task I thought of was refused". The generated one removes the
    hand-picking but not the provenance — I wrote the generator too. Both are
    materially weaker than a rate measured against traffic someone else
    generated, and the generated corpus already refuses 8 of its 141 tasks (§6).
-9. **Concurrent tasks sharing a budget pool are not supported** in v0.1.0.
-10. **No third-party security review** at time of writing.
+10. **Concurrent tasks sharing a budget pool are not supported** in v0.1.0.
+11. **No third-party security review** at time of writing.
 
 ### What would falsify this design
 

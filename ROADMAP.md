@@ -660,9 +660,10 @@ graph TD
   never what is inside it. Ingest strips active content; it does not redact
   credentials, and a reader who watches a password come back with `removed: []`
   should find that written down rather than inferred. Narrowing `fs_root` is the
-  lever. THREAT_MODEL §7 gains the residual risk.
+  lever. THREAT_MODEL §7 gains the residual risk, and I4 gains the honest
+  consequence I2 already carried.
 - **Tests** n/a — documentation node.
-- [ ] Not started
+- [x] Merged
 
 #### N-49 — ADR-0009: model-in-the-loop evidence is not a benchmark
 - **Owner** Technical lead · **Depends on** none · **Invariant** none
