@@ -2,8 +2,12 @@
 
 Three caps, because an agent can be made to burn resources along three
 different axes and bounding one leaves the others open: call count, cumulative
-cost, and wall-clock. A slow endpoint polled in a loop costs almost nothing per
-call and still denies service.
+cost, and elapsed task span.
+
+The span is measured from the moment the ledger is constructed, so it bounds
+how long the task may keep acting rather than how much time it spends inside
+calls. Polling a slow endpoint costs almost nothing per call -- and neither
+does waiting, which is why the cap that has to bind is the one over the span.
 
 At any cap the task **fails closed** and says so. It does not fall back to a
 cheaper tool, does not silently stop, and does not finish the turn quietly.
@@ -39,6 +43,11 @@ class BudgetLedger:
     The clock is injected. A ledger that reads the wall clock directly cannot
     be tested deterministically, and NFR-002 requires the decision path to be
     reproducible -- including the path that refuses.
+
+    ``_started`` is stamped in this constructor, and every later comparison is
+    against that instant. The ledger therefore begins spending its wall-clock
+    cap before the first call arrives, and keeps spending it while no call is
+    in flight.
 
     Once exhausted, a ledger stays exhausted. Recovery would mean a task that
     hit its cap could resume, which is not what failing closed means.

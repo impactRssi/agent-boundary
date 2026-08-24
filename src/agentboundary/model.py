@@ -70,9 +70,16 @@ class Outcome(str, Enum):
 class Caps:
     """Per-task hard limits (I3, FR-012).
 
-    Wall-clock is included alongside count and cost because an agent can burn a
-    budget in ways that are cheap per call: a slow endpoint polled in a loop
-    costs little and still denies service.
+    ``max_wall_clock_s`` bounds the span from task construction to the call
+    being decided. That span covers everything, including what the agent was
+    not doing: model latency, tool execution, and an operator's idle time
+    between turns. It is not a sum of call durations, and sizing it as though
+    it were will exhaust an interactive task that has barely called anything.
+
+    Bounding the span rather than the time spent inside calls is the point and
+    not an approximation of it. What needs a limit is how long a steered agent
+    may keep acting, and an agent idling between two cheap calls is still an
+    agent that can act. A cap over call durations would leave that unbounded.
     """
 
     max_calls: int
