@@ -11,8 +11,11 @@ agent and the tools it can reach. It decides which proposed calls become
 effects — without consulting a model, and without reading a single token of the
 agent's context.
 
-> **Status: `v0.3.0`.** The broker, ingest, MCP transport, injection corpus,
-> audit viewer, and benchmark harness are implemented and blocking in CI.
+> **Status: `v0.4.0`.** The broker, ingest, MCP transport, injection corpus,
+> audit viewer, and benchmark harness are implemented and blocking in CI. New
+> here: `agent-boundary[runner]`, an agent session in which the brokered tools
+> are the *only* tools — read §7 item 3 for the part of it that is not yet
+> exercised against a live runtime.
 > `v0.1.0` and `v0.2.0` are superseded. `v0.1.0` should not be used: it shipped a broken MCP
 > transport, an egress bypass, and a defeatable test guard — all three are in
 > the [changelog](CHANGELOG.md), found by the work in this release rather than
@@ -444,20 +447,33 @@ Read this section. It is the one that tells you whether this is useful to you.
    narrowest directory the task actually needs, not the repository it happens to
    sit in — and keeping secrets out of that directory. Nothing downstream of a
    read can un-disclose what it returned.
-3. **Composition of in-scope tools is not analysed.** Two individually harmless
+3. **The brokered runner's live path is not exercised.** `agent-boundary[runner]`
+   builds a session whose only tools are the broker's, and the offline half of
+   that is proven: the surface is derived from the broker's own `tools/list`
+   over a real transport, a built-in tool is unrepresentable rather than
+   filtered out, and `--dry-run` prints the whole surface without a model. What
+   has never run in CI is the model call itself — `run_session` is the only
+   uncovered path in the package, because covering it would put a model on the
+   gate, which `ADR-0009` forbids. Concretely unverified: this broker names its
+   tools `fs.read`, so the runner qualifies them as `mcp__agentboundary__fs.read`,
+   and whether a dot survives the runtime's own tool-name matching has not been
+   checked against a live session. The failure direction is fail-closed — a tool
+   that asks for permission instead of running, never one that runs unbrokered —
+   but treat the runner as new until you have run it once yourself.
+4. **Composition of in-scope tools is not analysed.** Two individually harmless
    tools — read an internal document, file a public ticket — compose into an
    exfiltration path. That is bounded by attribution and approval, not
    prevented. Detecting it is unsolved here.
-4. **Data labelling is mitigation, not proof.** Delimiting and provenance
+5. **Data labelling is mitigation, not proof.** Delimiting and provenance
    tagging reduce the rate at which payloads steer the model. They do not bound
    it, and the design does not depend on them holding — which is why
    authorisation lives in the broker rather than in the labelling.
-5. **An allowlisted egress host can be an exfiltration channel** if it accepts
+6. **An allowlisted egress host can be an exfiltration channel** if it accepts
    attacker-readable content. Narrowing the allowlist is your lever.
-6. **No defence against a malicious operator**, by design. Whoever configures
+7. **No defence against a malicious operator**, by design. Whoever configures
    the task, the allowlist, and the approval policy is trusted.
-7. **No claim about model alignment.** The design assumes the model is hostile.
-8. **A permission lease is a hole you opened on purpose, and while it is open
+8. **No claim about model alignment.** The design assumes the model is hostile.
+9. **A permission lease is a hole you opened on purpose, and while it is open
    the boundary is not there.** An operator can widen a task to one extra path,
    host, or tool for a stated period. **A leased path is an unbounded path for
    the duration** — during the window, the invariant the lease widens does not
@@ -472,14 +488,14 @@ Read this section. It is the one that tells you whether this is useful to you.
    granting requires the subject to be typed rather than picked from it. See
    [`ADR-0008`](docs/adr/ADR-0008-permission-leases-are-bounded-by-construction.md)
    and [`docs/THREAT_MODEL.md`](docs/THREAT_MODEL.md) §7, items 15–23.
-9. **Both benign-task corpora are synthetic, and neither is independent.** The
+10. **Both benign-task corpora are synthetic, and neither is independent.** The
    hand-written one I wrote knowing what the controls check, so its 0/25 reads
    as "no benign task I thought of was refused". The generated one removes the
    hand-picking but not the provenance — I wrote the generator too. Both are
    materially weaker than a rate measured against traffic someone else
    generated, and the generated corpus already refuses 8 of its 141 tasks (§6).
-10. **Concurrent tasks sharing a budget pool are not supported.**
-11. **No third-party security review** at time of writing.
+11. **Concurrent tasks sharing a budget pool are not supported.**
+12. **No third-party security review** at time of writing.
 
 ### What would falsify this design
 
@@ -524,7 +540,7 @@ AUTHORISED     approved comment
 Not on PyPI yet — install from the repository:
 
 ```bash
-uv pip install "agent-boundary[mcp] @ git+https://github.com/impactRssi/agent-boundary@v0.3.0"
+uv pip install "agent-boundary[mcp] @ git+https://github.com/impactRssi/agent-boundary@v0.4.0"
 python -m agentboundary --task task.json --dry-run
 ```
 

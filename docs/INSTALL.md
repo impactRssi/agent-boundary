@@ -82,7 +82,7 @@ arguments, so put it behind whatever you already use.
 > `pip install` line will change when that stops being true.
 
 ```bash
-uv pip install "agent-boundary[mcp] @ git+https://github.com/impactRssi/agent-boundary@v0.3.0"
+uv pip install "agent-boundary[mcp] @ git+https://github.com/impactRssi/agent-boundary@v0.4.0"
 ```
 
 The `[mcp]` extra pulls the MCP SDK. Without it you get the library and the
@@ -191,7 +191,7 @@ the harness rather than on the broker.
 The runner is that session, built correctly:
 
 ```bash
-uv pip install "agent-boundary[runner] @ git+https://github.com/impactRssi/agent-boundary@v0.3.0"
+uv pip install "agent-boundary[runner] @ git+https://github.com/impactRssi/agent-boundary@v0.4.0"
 export ANTHROPIC_API_KEY=...
 
 python -m agentboundary.runner --task task.json --dry-run

@@ -62,6 +62,31 @@ def test_superseded_releases_are_never_the_documented_install() -> None:
         assert not offered, f"{document} offers a superseded release to install: {sorted(offered)}"
 
 
+def test_the_package_version_matches_the_declared_one() -> None:
+    """The version lives in two files. Nothing checked they agree until now.
+
+    `v0.2.2` was tagged while `pyproject.toml` still said `0.2.1`, so the
+    release carried artefacts named for a different version than the tag. The
+    fix at the time was a check in the release workflow -- at *tag* time, on a
+    commit already pushed, when the cheapest correction has already become the
+    most expensive one. This fails on the branch instead.
+
+    Read from source rather than imported. Importing compares the *installed*
+    package against the *source* manifest, which disagree in any environment
+    that has not been resynced -- a spurious failure that teaches a contributor
+    to distrust the check. The question is whether the two files agree, so both
+    are read as files.
+    """
+    source = (REPO_ROOT / "src" / "agentboundary" / "__init__.py").read_text(encoding="utf-8")
+    found = re.search(r'^__version__ = "([^"]+)"', source, re.MULTILINE)
+    assert found, "no `__version__` assignment in src/agentboundary/__init__.py"
+
+    assert found.group(1) == _declared_version(), (
+        f"`__version__` is {found.group(1)!r} but `[project] version` is "
+        f"{_declared_version()!r}. Both are hand-written; move them together."
+    )
+
+
 def test_the_check_would_notice_a_stale_pin() -> None:
     """A guard nobody has seen fail is a guard nobody has tested."""
     stale = 'uv pip install "agent-boundary[mcp] @ git+https://x/agent-boundary@v0.1.0"'

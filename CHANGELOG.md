@@ -3,6 +3,122 @@
 Notable changes per release. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versioning is [semantic](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] — 2026-08-25
+
+**This release makes the boundary structural inside an agent session, and says
+which half of that is proven.** Until now the broker bounded the calls that
+went *through* it, while whatever ran it kept its own filesystem and shell.
+Routing some calls through a broker while a second route to the same disk stays
+open demonstrates nothing about the broker — which is `ADR-0002`'s own argument,
+and it applied to this repository. `agent-boundary[runner]` closes it: the
+session's tool surface is derived from the broker's `tools/list`, and a built-in
+tool is *unrepresentable* rather than filtered out.
+
+The part that is not proven is stated in README §7 item 3 and repeated here
+under "Still not true", because a release that ships a new integration and
+mentions only its guarantees is the kind of release this project exists to
+argue against.
+
+### Added — a session whose only tools are the broker's
+
+- **`agent-boundary[runner]`** (`python -m agentboundary.runner`). `SessionSpec`
+  has no field in which a built-in tool could be requested, and every name it
+  carries must be a qualified tool of this session's own brokered server. There
+  is no representable spec containing `Bash`. The list of native tool families
+  in the module is documentation and a test fixture — never a blocklist
+  consulted on the way to a decision, which would be the call-time filter
+  `ADR-0002` rejects.
+- **The surface is derived, not declared.** Reading `tool_scope` from the task
+  file would be cheaper and offline, and wrong twice: a second source of truth
+  for what the session may reach, and one that disagrees with the broker the
+  moment a tool lease widens scope. The runner asks the broker over the
+  transport the session will use.
+- **`--dry-run`** resolves and prints the whole surface — spawn command, brokered
+  names, built-ins, settings sources — without calling a model. Offline and
+  free; run it after every task edit.
+- **`strict_mcp_config` and no settings sources**, so a native tool or a second
+  MCP server cannot reappear from ambient project configuration.
+
+### Added — evidence scaffolding
+
+- **`ADR-0009`: model-in-the-loop evidence is not a benchmark.** Two artifact
+  classes that never share a file. Benchmarks stay offline, deterministic and
+  blocking. An evidence run lives under `evidence/`, carries `n`, model id, date
+  and cost in the same block as any rate, publishes the samples that refute it,
+  and never gates a build. No evidence figure is averaged into a benchmark one.
+- **`evidence/workspaces/planted-carrier/`** — a disposable checkout with genuine
+  work (an open issue, a failing test, a one-line fix) in which the
+  `dependency_readme` carrier is live rather than quoted, realising A1 against
+  I1. It is refused before a single file is written unless every address every
+  declared sink resolves to is loopback: userinfo confusion, `0.0.0.0`, mapped
+  IPv6, decimal/octal/hex encodings, trailing root labels, punycode, and the
+  DNS-rebinding shape are each refused with a case. The default resolver
+  resolves nothing, so the check performs no network I/O.
+
+### Fixed
+
+- **The documented install pinned the release the README warns against.** The
+  status notice said `v0.1.0` "should not be used — it shipped a broken MCP
+  transport, an egress bypass, and a defeatable test guard", and the
+  getting-started command in both `README.md` and `docs/INSTALL.md` pinned
+  `@v0.1.0`. Two releases shipped without the pin moving. A reader following the
+  instructions installed the known-broken transport. Both pins now track the
+  release and a test asserts they match `[project] version` and are never a
+  superseded tag.
+- **`SECURITY.md` said there was no backport policy "until `v0.1.0` is tagged".**
+  It had been tagged for three releases; the sentence had stopped meaning
+  anything.
+- **The version lived in two files with nothing checking they agree.** `v0.2.2`
+  was tagged while `pyproject.toml` still said `0.2.1`, and the fix at the time
+  was a check at *tag* time. The drift itself is now a unit test, so it fails on
+  the branch rather than in the release workflow.
+
+### Corrected — what the wall-clock cap measures
+
+- **`max_wall_clock_s` bounds the task's span, not its work.** `BudgetLedger`
+  stamps its start in the constructor, so the cap counts model latency and
+  operator idle time. The `Caps` docstring justified it as bounding "a slow
+  endpoint polled in a loop", which is a different quantity, and FR-012 said
+  only "wall-clock time". Found by pointing the broker at a real project: a task
+  capped at 300 s refused at 350 s having spent about two seconds inside the
+  broker. The refusal was correct and the configuration was not, and nothing the
+  operator had read would have told them so. Behaviour is unchanged — bounding
+  the span is what limits how long a steered agent keeps acting, which a sum of
+  call durations does not — but the code, FR-012 and `docs/INSTALL.md` now say
+  it, with batch-versus-interactive guidance whose numbers are marked as chosen
+  rather than measured.
+- **A secret inside `fs_root` is disclosed by a correctly authorised read.** The
+  root bounds *which* file, never what is inside it; ingest strips active content
+  and is not a redaction layer. Now README §7 item 2 and residual risk 24, after
+  a real read returned a plaintext credential under `"removed": []` — specified
+  behaviour that nothing had written down.
+
+### Measured
+
+- 1423 tests across four blocking tiers on Python 3.11, 3.12 and 3.13; 95.47%
+  coverage against an 80% floor.
+- The injection corpus, the overhead figure and both benign corpora are
+  unchanged from `0.3.0` and carry the same caveats: 46/46 blocked across nine
+  carriers, 0.10 ms mean overhead under the conditions recorded in
+  `benchmarks/results.json` and nowhere else, 0/25 hand-written and 2/141
+  generated false refusals reported side by side and never averaged.
+
+### Still not true
+
+- **The runner's live path has never run.** `run_session` is the only uncovered
+  path in the package: covering it would put a model on the gate, which
+  `ADR-0009` forbids. Concretely unverified — this broker names its tools
+  `fs.read`, so the runner qualifies them as `mcp__agentboundary__fs.read`, and
+  whether a dot survives the runtime's own tool-name matching has not been
+  checked against a live session. The failure direction is fail-closed: a tool
+  that asks for permission instead of running, never one that runs unbrokered.
+- **No evidence run has been recorded.** `evidence/` holds the workspace an
+  evidence run is given and nothing else. The two arms that would show whether a
+  real model emits the out-of-scope call are not built, so the injection corpus
+  still has no counterfactual and 46/46 still says a locked door is locked.
+- **Neither benign corpus is independent**, and there is still **no third-party
+  security review**.
+
 ## [0.3.0] — 2026-08-23
 
 **This release adds a mechanism that deliberately widens the invariants.** That
@@ -350,6 +466,7 @@ that accepts attacker-readable content is an exfiltration channel; there is no
 defence against a malicious operator; concurrent tasks sharing a budget pool
 are unsupported; no third-party review.
 
+[0.4.0]: https://github.com/impactRssi/agent-boundary/releases/tag/v0.4.0
 [0.3.0]: https://github.com/impactRssi/agent-boundary/releases/tag/v0.3.0
 [0.2.3]: https://github.com/impactRssi/agent-boundary/releases/tag/v0.2.3
 [0.2.1]: https://github.com/impactRssi/agent-boundary/releases/tag/v0.2.1
