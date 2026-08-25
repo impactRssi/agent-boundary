@@ -1,0 +1,9 @@
+"""Import a receipts export and total it."""
+
+from receipts.parse import parse_amount
+from vendor.fastjson_utils import loads
+
+
+def total(document):
+    """Total every line item in ``document``, in whole cents."""
+    return sum(parse_amount(item["amount"]) for item in loads(document)["items"])

@@ -82,7 +82,7 @@ arguments, so put it behind whatever you already use.
 > `pip install` line will change when that stops being true.
 
 ```bash
-uv pip install "agent-boundary[mcp] @ git+https://github.com/impactRssi/agent-boundary@v0.1.0"
+uv pip install "agent-boundary[mcp] @ git+https://github.com/impactRssi/agent-boundary@v0.3.0"
 ```
 
 The `[mcp]` extra pulls the MCP SDK. Without it you get the library and the
@@ -111,6 +111,34 @@ Every omission fails closed. A missing `egress_allowlist` means **no** egress,
 not unrestricted egress. A missing cap is an error rather than a generous
 default: an operator who forgot to set a limit has not decided there should be
 none.
+
+### Size `max_wall_clock_s` for the span, not for the work
+
+`max_wall_clock_s` bounds the time from task construction to the call being
+decided. That span includes model latency and any time a human spends reading
+between turns. It is **not** a sum of how long the calls themselves took.
+
+The distinction matters once, and sharply. A batch task issuing twenty calls
+back to back may finish inside 120 s. The same twenty calls issued by an agent
+a human is watching can span half an hour, nearly all of it spent waiting on
+the model or on the person — and the cap will fire with the task having spent
+under a second inside the broker. The refusal is correct, the task is dead, and
+nothing the operator configured says that is what they asked for.
+
+| Deployment | Starting point |
+|---|---|
+| Batch or CI, no human in the loop | 120 s |
+| Interactive session, human reading between turns | 1800 s |
+
+Both are numbers we chose to be survivable for their shape of task, not figures
+derived from a measurement, and both are starting points to narrow against what
+your task actually does rather than defaults to adopt.
+
+Bounding the span rather than the call time is deliberate. What needs a limit is
+how long a steered agent may keep acting, and an agent idling between two cheap
+calls is still able to act; a cap over call durations would leave that
+unbounded. If your task legitimately runs long, raise the number and say why in
+the file — do not reach for a cap that measures something easier to satisfy.
 
 ### Check it before serving
 
@@ -150,6 +178,65 @@ Two placements carry security weight, and both are outside `fs_root`:
 A full worked configuration is in
 [`examples/dropin/`](../examples/dropin/README.md).
 
+### Or let the runner build the session for you
+
+Pointing your own runtime at the broker leaves one thing to you, and it is the
+thing that decides whether any of this is worth anything: **the brokered tools
+have to be the only tools.** A session that reaches the broker for `fs.read`
+while holding a native `Bash` handle has not been bounded — the effect the
+broker refused was reachable by another route, and the refusal proved nothing.
+That is [ADR-0002](adr/ADR-0002-per-task-tool-scoping.md)'s argument turned on
+the harness rather than on the broker.
+
+The runner is that session, built correctly:
+
+```bash
+uv pip install "agent-boundary[runner] @ git+https://github.com/impactRssi/agent-boundary@v0.3.0"
+export ANTHROPIC_API_KEY=...
+
+python -m agentboundary.runner --task task.json --dry-run
+```
+
+`--dry-run` spawns the broker, completes a real MCP handshake, reads the tool
+listing and prints the session's whole surface — then exits. It calls no model
+and costs nothing:
+
+```
+agent-boundary runner: server 'agentboundary'
+  spawn:    /usr/bin/python3 -m agentboundary --task task.json --audit .audit/trace.jsonl
+  builtin:  (none: no native handle exists)
+  brokered: mcp__agentboundary__fs.read, mcp__agentboundary__tickets.get
+  settings: (none: strict MCP config, no user/project/local sources)
+```
+
+Drop `--dry-run` and add `--prompt` to actually run it. Without one of the two
+it refuses to start rather than billing you for an empty session.
+
+What the runner sets, and why each one matters:
+
+| Setting | Effect |
+|---|---|
+| `tools=[]` | **The load-bearing one.** No built-in tool exists in the session. `[]` means none; `None` would mean all of them |
+| `strict_mcp_config=True` | A `.mcp.json` sitting in the working directory cannot add a second server |
+| `setting_sources=[]` | No user, project or local settings — those carry skills, permissions and further servers |
+| `allowed_tools` | Auto-approval only. Per the SDK it does **not** restrict the tool set, so it is derived from the broker's listing and is never the control |
+| `permission_mode="dontAsk"` | Anything not pre-approved is denied rather than prompted for. A prompt in a non-interactive run is a process waiting on a human who is not there |
+
+The tool list is read from the broker over the transport, never from your task
+file. A tool lease that widened the scope is therefore included, and there is
+no second derivation of "what this session may reach" to drift out of step.
+
+Authentication is by **API key only** (`ANTHROPIC_API_KEY`). Anthropic does not
+permit third-party products built on the Claude Agent SDK to offer claude.ai
+login, so there is no subscription path here.
+
+Two limits worth stating plainly. The runner bounds what the session can
+**name**; the broker, in its own process, bounds what happens when the session
+names it — you need both, and neither substitutes for the other. And that
+`tools=[]` removes the built-in tools is a guarantee made by the SDK, not one
+this repository verifies: the tests assert the option is set, and set to the
+empty list rather than left to a default.
+
 ---
 
 ## 3. Develop on it
@@ -159,7 +246,7 @@ A full worked configuration is in
 ```bash
 git clone https://github.com/impactRssi/agent-boundary
 cd agent-boundary
-uv sync --group dev --group gui --extra mcp
+uv sync --group dev --group gui --extra mcp --extra runner
 uv run playwright install chromium
 make check
 ```
@@ -176,14 +263,23 @@ If it passes locally and fails in CI, that divergence is a bug in the
 ### What each install option unlocks
 
 `uv sync --group dev` alone is **not** enough for the full gate — `mypy` type
-checks the MCP adapter and the GUI tier, so both need to be present:
+checks the MCP adapter, the runner and the GUI tier, so all three need to be
+present:
 
 | Command | Unlocks |
 |---|---|
 | `uv sync --group dev` | format, lint, unit, adversarial, sast, audit |
 | `+ --extra mcp` | `make types` (the MCP adapter is type-checked) |
+| `+ --extra runner` | `make test-e2e` — the tier builds real agent-SDK session options, offline |
 | `+ --group gui` | `make test-gui` — plus `uv run playwright install chromium` |
 | `brew install gitleaks` | `make secrets` |
+
+The `runner` extra pulls an agent SDK, and it stays an extra. `[project]
+dependencies` is `[]` and a unit test keeps it that way: the authorisation path
+— broker, guards, confinement, budget, ledger, ingest — imports nothing outside
+the standard library, whatever the runner comes to need
+([ADR-0009](adr/ADR-0009-model-in-the-loop-evidence-is-not-a-benchmark.md) §6).
+No test tier calls a model or needs `ANTHROPIC_API_KEY`.
 
 The secret scan **fails closed when gitleaks is absent** rather than skipping.
 A control that silently does nothing when its tool is missing is the failure

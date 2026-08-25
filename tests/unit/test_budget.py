@@ -76,7 +76,7 @@ class TestCostCap:
 
 class TestWallClockCap:
     def test_a_task_past_its_deadline_is_refused_even_below_other_caps(self) -> None:
-        """A slow endpoint polled in a loop costs little and still denies service."""
+        """Polling a slow endpoint costs little per call and still denies service."""
         clock = FakeClock()
         ledger = BudgetLedger(_caps(calls=1000, cost=1000.0, wall=10.0), clock=clock)
         context = _context(_caps(calls=1000, cost=1000.0, wall=10.0))
@@ -85,6 +85,62 @@ class TestWallClockCap:
         result = BudgetGuard(ledger).check(context)
         assert not result.passed
         assert "wall-clock" in result.detail
+
+
+class TestWallClockMeasuresTheTaskSpan:
+    """What the cap counts, pinned so a later refactor cannot quietly change it.
+
+    The span runs from ledger construction, not from the first call and not as
+    a sum of call durations. That is what bounds how long a steered agent may
+    keep acting -- and it is also why an interactive task, where most of the
+    span is model latency and human reading time, needs a larger number than a
+    batch one. An operator who sizes this cap as though it measured time spent
+    inside calls will size it far too small.
+    """
+
+    def test_the_cap_binds_with_no_call_ever_admitted(self) -> None:
+        clock = FakeClock()
+        caps = _caps(calls=1000, cost=1000.0, wall=10.0)
+        ledger = BudgetLedger(caps, clock=clock)
+
+        clock.advance(10.0)
+
+        state = ledger.state()
+        assert state.calls == 0, "nothing was admitted, so nothing should be counted"
+        assert state.cost == 0.0
+        assert state.exhausted, "idle time alone spends the span"
+        assert "wall-clock" in state.reason
+
+    def test_idle_time_between_calls_is_charged_to_the_span(self) -> None:
+        clock = FakeClock()
+        caps = _caps(calls=1000, cost=1000.0, wall=100.0)
+        ledger = BudgetLedger(caps, clock=clock)
+
+        clock.advance(30.0)  # waiting on the model, not on a tool
+        ledger.debit(1.0)
+        clock.advance(5.0)
+
+        state = ledger.state()
+        assert state.elapsed_s == pytest.approx(35.0)
+        assert state.calls == 1
+        assert not state.exhausted
+
+    def test_the_span_is_not_the_sum_of_call_durations(self) -> None:
+        """Twenty instant calls spread over an hour exhaust an hour-long cap."""
+        clock = FakeClock()
+        caps = _caps(calls=1000, cost=1000.0, wall=3600.0)
+        ledger = BudgetLedger(caps, clock=clock)
+        context = _context(caps)
+
+        for _ in range(20):
+            assert BudgetGuard(ledger).check(context).passed
+            ledger.debit(0.0)  # the call itself takes no measurable time
+            clock.advance(180.0)  # three minutes of model latency between turns
+
+        result = BudgetGuard(ledger).check(context)
+        assert not result.passed
+        assert "wall-clock" in result.detail
+        assert ledger.state().cost == 0.0, "the span bound it, not the cost"
 
 
 class TestExhaustionIsTerminal:

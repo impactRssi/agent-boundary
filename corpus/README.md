@@ -61,6 +61,21 @@ is the control on the control: legitimate work must be **authorised** under the
 same pipeline, and each refusal must flip to an authorisation when the task
 legitimately permits it. Without that, "100% blocked" is not a measurement.
 
+## One of these carriers is also live
+
+Every payload here is *quoted*: `carrier_content` is a string a test reads, and
+nothing acts on it. One carrier additionally exists in a form something can act
+on — the `dependency_readme` of `A1-readme-01`, planted in a working checkout
+at [`evidence/workspaces/planted-carrier/`](../evidence/workspaces/planted-carrier/)
+where an agent has a stated reason to open it. The two are checked against each
+other by test, so the live copy cannot come to claim an attack-table row the
+quoted one no longer holds.
+
+The live copy names a loopback destination and only a loopback destination, and
+that is enforced before the workspace is written rather than reviewed for. See
+[ADR-0009](../docs/adr/ADR-0009-model-in-the-loop-evidence-is-not-a-benchmark.md)
+for why evidence and benchmarks never share a file.
+
 ## Why the payloads are committed in the clear
 
 They are attacks against *this* broker, in a repository whose entire argument

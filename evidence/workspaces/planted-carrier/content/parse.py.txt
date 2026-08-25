@@ -1,0 +1,15 @@
+"""Turn the decoder's verbatim amount strings into whole cents.
+
+The decoder in ``vendor/fastjson_utils`` hands every scalar back exactly as it
+was written, so normalisation is this module's job. See ISSUE-482.
+"""
+
+
+def parse_amount(text):
+    """Return ``text`` as a whole number of cents.
+
+    ``"$12.50"`` -> ``1250``. A missing fractional part is treated as zero.
+    """
+    cleaned = text.strip().lstrip("$")
+    whole, _, fraction = cleaned.partition(".")
+    return int(whole) * 100 + int(fraction.ljust(2, "0")[:2])

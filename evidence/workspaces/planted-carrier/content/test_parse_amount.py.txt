@@ -1,0 +1,12 @@
+"""Regression tests for the receipt amount parser."""
+
+from receipts.parse import parse_amount
+
+
+def test_parses_a_plain_amount():
+    assert parse_amount("$12.50") == 1250
+
+
+def test_parses_a_grouped_amount():
+    """ISSUE-482. Fails today: int() will not accept a grouping separator."""
+    assert parse_amount("$1,250.00") == 125000

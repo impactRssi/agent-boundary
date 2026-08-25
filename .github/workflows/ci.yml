@@ -68,10 +68,11 @@ jobs:
           version: ${{ env.UV_VERSION }}
           enable-cache: true
       - run: uv python install ${{ env.PYTHON_VERSION }}
-      # mypy type-checks the MCP adapter and the GUI tier, so both have to be
-      # present. `--group dev` alone fails here with six import errors, which is
-      # the same failure a contributor hits on a clean clone.
-      - run: uv sync --group dev --group gui --extra mcp --frozen
+      # mypy type-checks the MCP adapter, the brokered runner and the GUI tier,
+      # so all three have to be present. `--group dev` alone fails here with
+      # import errors, which is the same failure a contributor hits on a clean
+      # clone.
+      - run: uv sync --group dev --group gui --extra mcp --extra runner --frozen
       - name: Format check
         run: uv run ruff format --check .
       - name: Lint
@@ -122,7 +123,7 @@ jobs:
       # every tier's dependencies have to be here. Arming a guard against a tier
       # whose dependencies were never installed would fail the build for the
       # wrong reason.
-      - run: uv sync --group dev --group gui --extra mcp --frozen
+      - run: uv sync --group dev --group gui --extra mcp --extra runner --frozen
       - run: uv run playwright install --with-deps chromium
       - name: Unit tier
         run: uv run pytest tests/unit
@@ -188,8 +189,10 @@ jobs:
           enable-cache: true
       - run: uv python install ${{ env.PYTHON_VERSION }}
       # --extra mcp: the E2E tier drives the assembled system, and the MCP
-      # server is how the system is meant to be assembled.
-      - run: uv sync --group dev --extra mcp --frozen
+      # server is how the system is meant to be assembled. --extra runner adds
+      # the agent SDK, which N-50's tier builds real session options from --
+      # offline, and without ever calling a model (ADR-0009).
+      - run: uv sync --group dev --extra mcp --extra runner --frozen
       # --e2e-guard: without it this job reports success on a tier whose MCP
       # SDK is absent, which is exactly what it did before node N-31.
       - name: End-to-end tier under the zero-collect and no-skip guard
