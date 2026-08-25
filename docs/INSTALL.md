@@ -82,7 +82,7 @@ arguments, so put it behind whatever you already use.
 > `pip install` line will change when that stops being true.
 
 ```bash
-uv pip install "agent-boundary[mcp] @ git+https://github.com/impactRssi/agent-boundary@v0.1.0"
+uv pip install "agent-boundary[mcp] @ git+https://github.com/impactRssi/agent-boundary@v0.3.0"
 ```
 
 The `[mcp]` extra pulls the MCP SDK. Without it you get the library and the

@@ -478,7 +478,7 @@ Read this section. It is the one that tells you whether this is useful to you.
    hand-picking but not the provenance — I wrote the generator too. Both are
    materially weaker than a rate measured against traffic someone else
    generated, and the generated corpus already refuses 8 of its 141 tasks (§6).
-10. **Concurrent tasks sharing a budget pool are not supported** in v0.1.0.
+10. **Concurrent tasks sharing a budget pool are not supported.**
 11. **No third-party security review** at time of writing.
 
 ### What would falsify this design
@@ -524,7 +524,7 @@ AUTHORISED     approved comment
 Not on PyPI yet — install from the repository:
 
 ```bash
-uv pip install "agent-boundary[mcp] @ git+https://github.com/impactRssi/agent-boundary@v0.1.0"
+uv pip install "agent-boundary[mcp] @ git+https://github.com/impactRssi/agent-boundary@v0.3.0"
 python -m agentboundary --task task.json --dry-run
 ```
 
@@ -555,7 +555,7 @@ MCP adapter and the GUI tier.
 | [`docs/SPEC.md`](docs/SPEC.md) | Normative requirements, each traced to an invariant or an ADR |
 | [`docs/WORKING_METHODS.md`](docs/WORKING_METHODS.md) | Graph-based decomposition, branch policy, the three test tiers |
 | [`docs/adr/`](docs/adr/) | The load-bearing decisions, each naming what was rejected and why |
-| [`ROADMAP.md`](ROADMAP.md) | The work graph: 26 nodes with dependencies and exit conditions |
+| [`ROADMAP.md`](ROADMAP.md) | The work graph: nodes with dependencies, exit conditions, and required test tiers |
 | [`CHANGELOG.md`](CHANGELOG.md) | What shipped, what was measured, what is still missing |
 | [`SECURITY.md`](SECURITY.md) | Disclosure policy, and what is explicitly *not* a vulnerability here |
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | What will get a pull request rejected, and why |
