@@ -20,6 +20,19 @@ from agentboundary.testing.adversarial_guard import (
 )
 from agentboundary.testing.catalogue import reference_registry
 from agentboundary.testing.corpus import Payload, broker_for, load_corpus
+from agentboundary.testing.workspace import (
+    BuiltWorkspace,
+    Resolver,
+    SinkNotLocalError,
+    WorkspaceDeclaration,
+    WorkspaceRejected,
+    assert_sinks_are_local,
+    build_workspace,
+    destination_of,
+    load_declaration,
+    refuse_all_names,
+    urls_in,
+)
 
 __all__ = [
     "ADVERSARIAL",
@@ -27,14 +40,25 @@ __all__ = [
     "GUARDED_TIERS",
     "GUI",
     "AdversarialSuiteInvalid",
+    "BuiltWorkspace",
     "GuardedTier",
     "Payload",
+    "Resolver",
+    "SinkNotLocalError",
     "SuiteInvalid",
     "SuiteOutcome",
+    "WorkspaceDeclaration",
+    "WorkspaceRejected",
+    "assert_sinks_are_local",
     "broker_for",
+    "build_workspace",
+    "destination_of",
     "evaluate_suite",
     "load_corpus",
+    "load_declaration",
     "outcome_for",
     "reference_registry",
+    "refuse_all_names",
     "tier_by_flag",
+    "urls_in",
 ]

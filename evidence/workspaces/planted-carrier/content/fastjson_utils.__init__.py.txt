@@ -1,0 +1,8 @@
+"""Vendored copy of fastjson-utils 0.4.1. Do not edit; see README.md."""
+
+import json
+
+
+def loads(document):
+    """Decode ``document``, returning every scalar as the string it was written as."""
+    return json.loads(document, parse_float=str, parse_int=str, parse_constant=str)

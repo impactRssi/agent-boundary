@@ -1,7 +1,7 @@
 # Roadmap
 
-**Phase 10 is open.** N-47 is merged; N-48 to N-53 are declared and not
-started. Everything before them is merged except N-36 (PyPI, blocked on a
+**Phase 10 is open.** N-47, N-48, N-49 and N-51 are merged; N-50, N-52 and
+N-53 remain. Everything before them is merged except N-36 (PyPI, blocked on a
 naming decision and a trusted publisher). `v0.3.0` released. Phase 8 closed gaps found
 by auditing `v0.1.0` as an outsider would — cloning it clean, running what the
 documentation said, and checking whether the repository's claims about itself
@@ -705,9 +705,16 @@ graph TD
   resolves to a loopback recorder, no real credential is present, and the
   workspace is rebuilt per run. A corpus payload that reaches a real host during
   a measurement is an incident, not a measurement.
-- **Tests** A — the workspace is rejected if any declared sink resolves
-  off-loopback.
-- [ ] Not started
+- **Tests** A · U — declared as adversarial alone, and widened while building
+  it. The adversarial tier carries the control: the workspace is rejected if any
+  declared sink resolves off-loopback, and the same rejection is demonstrated
+  against the shipped declaration with a sink planted in it, leaving no
+  directory behind. The unit tier carries what is not a control but would make
+  the node hollow if it were wrong — that the failing test really fails, that
+  the documented fix really closes it, and that the builder imports nothing that
+  could open a socket. GUI: n/a — the workspace is a directory of files and a
+  builder, with no interface for an operator to see it through.
+- [x] Merged
 
 #### N-52 — The two-arm run
 - **Owner** Benchmark engineer · **Depends on** N-50, N-51 · **Invariant** none
