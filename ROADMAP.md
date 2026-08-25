@@ -741,7 +741,7 @@ Recorded so that absence is a decision rather than an oversight.
 
 | Item | Why not now |
 |---|---|
-| Concurrent tasks sharing a budget pool | Adds cross-task state to the decision path; v0.1.0 keeps the broker per-task and stateless across tasks. Listed as a limitation |
+| Concurrent tasks sharing a budget pool | Adds cross-task state to the decision path; the broker stays per-task and stateless across tasks. Listed as a limitation |
 | Detecting unsafe composition of two in-scope tools | Unsolved. Bounded by attribution and approval, not prevented (threat model §7.2) |
 | A model-based classifier as a noise reducer | Permitted *alongside* the broker, never on the authorisation path (ADR-0001). The false-refusal rate is now measured at 0/25 on a synthetic corpus, so there is no measured noise to reduce — revisit when a rate from real traffic exists |
 | `max_tool_time_s` as a cap distinct from the task span | N-47 makes the span's semantics explicit, which is the defect that was actually costing something. A second cap adds an axis to the decision path for a quantity `max_cost` already bounds in practice. Revisit if an operator states the need |

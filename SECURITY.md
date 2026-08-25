@@ -32,8 +32,12 @@ Credit is given in the advisory unless you ask otherwise.
 
 ## Supported versions
 
-Pre-release. Only `main` is supported. There is no backport policy until
-`v0.1.0` is tagged.
+Only `main` is supported, and only the latest tag is recommended for use.
+There is no backport policy: a fix lands on `main` and ships in the next tag.
+
+`v0.1.0` and `v0.2.0` are superseded and `v0.1.0` should not be used --
+it shipped a broken MCP transport, an egress bypass, and a defeatable test
+guard, all three recorded in the [changelog](CHANGELOG.md).
 
 ---
 
