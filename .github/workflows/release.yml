@@ -61,7 +61,7 @@ jobs:
       # on the branch is not the same statement as the tag being releasable.
       - name: Re-run the blocking gate at this commit
         run: |
-          uv sync --group dev --group gui --extra mcp --frozen
+          uv sync --group dev --group gui --extra mcp --extra runner --frozen
           uv run playwright install --with-deps chromium
           uv run ruff format --check .
           uv run ruff check .
