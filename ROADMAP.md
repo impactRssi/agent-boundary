@@ -2,7 +2,7 @@
 
 **Phase 10 is open.** N-47 to N-51 are merged; N-52 and N-53 are declared and
 not started. Everything before them is merged except N-36 (PyPI, blocked on a
-naming decision and a trusted publisher). `v0.3.0` released. Phase 8 closed gaps found
+naming decision and a trusted publisher). `v0.4.0` released. Phase 8 closed gaps found
 by auditing `v0.1.0` as an outsider would — cloning it clean, running what the
 documentation said, and checking whether the repository's claims about itself
 held. Three did not, and two of those were security defects. Both are in the
