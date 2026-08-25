@@ -121,7 +121,7 @@ jobs:
           subject-path: "dist/*"
 
       - name: Publish the release
-        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
+        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
         with:
           # Passed as an input rather than picked up from .git/config, so the
           # grant is visible at the one step that needs it.
