@@ -1,7 +1,7 @@
 # Roadmap
 
-**Phase 10 is open.** N-47 is merged; N-48 to N-53 are declared and not
-started. Everything before them is merged except N-36 (PyPI, blocked on a
+**Phase 10 is open.** N-47 to N-50 are merged; N-51 to N-53 are declared and
+not started. Everything before them is merged except N-36 (PyPI, blocked on a
 naming decision and a trusted publisher). `v0.3.0` released. Phase 8 closed gaps found
 by auditing `v0.1.0` as an outsider would — cloning it clean, running what the
 documentation said, and checking whether the repository's claims about itself
@@ -693,8 +693,23 @@ graph TD
   nothing, which is `ADR-0002`'s argument turned on this repository. Ships as
   the reference integration, not as demo scaffolding.
 - **Tests** U · E — E2E asserts over a real transport that a native-tool call
-  has no handle to be issued through, rather than that it was refused.
-- [ ] Not started
+  has no handle to be issued through, rather than that it was refused. GUI: n/a
+  — the runner's only interface is a terminal entry point, and the operator
+  surface it produces (`--dry-run`, which resolves the whole tool surface
+  without calling a model) is asserted in the E2E tier as a real subprocess.
+  Revised while building it: the declaration said nothing about how the
+  session's surface is *derived*, and that turned out to be the security
+  decision. The surface is read from the broker's own `tools/list` over the
+  transport rather than from the task file, because the task file is a second
+  source of truth for what the session may reach and disagrees with the broker
+  the moment a tool lease widens the scope. The unit tier therefore asserts
+  something stronger than "a native tool is absent": `SessionSpec` has no field
+  in which a built-in tool could be requested, so no value of the type names
+  one. `OPTIONAL_SUBPACKAGES` in `tests/unit/test_evidence_is_not_a_benchmark.py`
+  gained `runner`, paired with a module-level pin so the coarse exclusion buys
+  the two SDK bindings a third-party import and nothing else — which also
+  brings `mcp/server.py` back under a guard it had been outside of.
+- [x] Merged
 
 #### N-51 — A workspace with a live payload in a real carrier
 - **Owner** Security engineer · **Depends on** N-49 · **Invariant** none

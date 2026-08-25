@@ -42,6 +42,25 @@ mcp = [
     "mcp>=2.0",
 ]
 
+# The broker-only runner (N-50). An agent SDK, never a runtime dependency and
+# never on the authorisation path -- ADR-0009 §6 fixes that, and
+# tests/unit/test_evidence_is_not_a_benchmark.py enforces it.
+#
+# Depends on the `mcp` extra rather than restating its floor: the runner spawns
+# `python -m agentboundary` from this same installation, so the server half must
+# be present, and two copies of a version floor drift.
+#
+# >=0.2.144 is the version the surface was verified against, not a guess. The
+# runner sets `tools=[]` to mean "no built-in tools", which is a distinct option
+# from `allowed_tools` and is only load-bearing because the SDK encodes the
+# empty list explicitly rather than treating it as unset. An older release that
+# lacked the option would leave a session with a full native tool set and no
+# error, so the floor is the whole control.
+runner = [
+    "agent-boundary[mcp]",
+    "claude-agent-sdk>=0.2.144",
+]
+
 [dependency-groups]
 dev = [
   "pytest>=8.0",

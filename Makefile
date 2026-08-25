@@ -26,7 +26,7 @@ help: ## Show this help
 # failing at `types` -- the first command a contributor runs contradicting the
 # second.
 install: ## Create the environment and install everything the gate needs
-	$(UV) sync --group dev --group gui --extra mcp
+	$(UV) sync --group dev --group gui --extra mcp --extra runner
 	@echo "Browsers for the GUI tier: uv run playwright install chromium"
 
 format: ## Rewrite files to the canonical format
@@ -51,11 +51,13 @@ test-unit: ## Unit tier
 test-adversarial: ## Adversarial tier, under the zero-collect / no-skip guard
 	$(RUN) pytest tests/adversarial --adversarial-guard
 
-# --extra mcp is stated here, not assumed from whatever happens to be in the
+# The extras are stated here, not assumed from whatever happens to be in the
 # environment. The tier drives a real MCP client against a real broker
 # subprocess; without the SDK its central evidence cannot even be imported.
+# --extra runner adds the agent SDK, which N-50's tier constructs real session
+# options from -- offline, and never calling a model (ADR-0009).
 test-e2e: ## End-to-end tier over a real transport
-	$(RUN) --extra mcp pytest tests/e2e --e2e-guard
+	$(RUN) --extra mcp --extra runner pytest tests/e2e --e2e-guard
 
 test-gui: ## GUI tier, Playwright against the audit-trace viewer
 	$(RUN) --group gui pytest tests/gui --gui-guard
@@ -65,7 +67,7 @@ test-gui: ## GUI tier, Playwright against the audit-trace viewer
 # design -- measuring only unit coverage would report them as dead code and
 # push someone to write unit tests that mock the boundary under test.
 coverage: ## Full suite with the coverage floor enforced
-	$(RUN) --group gui --extra mcp pytest tests $(TIER_GUARDS) \
+	$(RUN) --group gui --extra mcp --extra runner pytest tests $(TIER_GUARDS) \
 		--cov=agentboundary --cov-report=term-missing
 
 # The guards live in our own conftest, so a regression that disabled one would

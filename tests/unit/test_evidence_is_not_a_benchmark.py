@@ -24,10 +24,34 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[2]
 PACKAGE_ROOT = REPO_ROOT / "src" / "agentboundary"
 
-#: The optional MCP adapter is the one place a third-party import is expected.
-#: It is an extra (`pip install agent-boundary[mcp]`), not a runtime dependency,
-#: and the broker it serves does not import it back.
-OPTIONAL_SUBPACKAGES = ("mcp",)
+#: Subpackages where a third-party import is expected. Each is an optional
+#: extra -- `agent-boundary[mcp]`, `agent-boundary[runner]` -- never a runtime
+#: dependency, and the broker they serve does not import them back.
+#:
+#: `runner` joined `mcp` at N-50, which needs an agent SDK. Excluding a whole
+#: subpackage is a coarse lever, so it is paired with
+#: :data:`OPTIONAL_ADAPTER_MODULES` below: the exclusion buys the two binding
+#: modules a third-party import and buys nothing else. Without that pairing,
+#: `agentboundary/runner/session.py` -- where the session's tool surface is
+#: actually decided -- would have left the guarded path, and that module is
+#: exactly the kind of thing this guard exists for.
+OPTIONAL_SUBPACKAGES = ("mcp", "runner")
+
+#: Within those subpackages, the only modules that may actually carry a
+#: third-party import. Everything else under them is held to the same rule as
+#: the authorisation path.
+#:
+#: Adding a name here is a visible diff and needs the argument the subpackage
+#: needed. It is also how `mcp/server.py` -- which assembles the guard pipeline
+#: in `build_broker` and had been unguarded since the exclusion was written --
+#: comes back under the check.
+OPTIONAL_ADAPTER_MODULES = frozenset(
+    {
+        "mcp/stdio.py",
+        "runner/claude.py",
+        "runner/discovery.py",
+    }
+)
 
 #: Fields whose presence would mean a model produced part of this file. Matched
 #: as whole keys except for ``model``, which is matched as a substring so that
@@ -47,12 +71,29 @@ MODEL_DERIVED_KEYS = frozenset(
 )
 
 
+def _is_optional(path: Path) -> bool:
+    return any(part in OPTIONAL_SUBPACKAGES for part in path.relative_to(PACKAGE_ROOT).parts)
+
+
 def _authorisation_path_modules() -> list[Path]:
+    return sorted(path for path in PACKAGE_ROOT.rglob("*.py") if not _is_optional(path))
+
+
+def _optional_subpackage_modules() -> list[Path]:
+    """Modules inside an excluded subpackage that are not a declared binding."""
     return sorted(
         path
         for path in PACKAGE_ROOT.rglob("*.py")
-        if not any(part in OPTIONAL_SUBPACKAGES for part in path.relative_to(PACKAGE_ROOT).parts)
+        if _is_optional(path)
+        and path.relative_to(PACKAGE_ROOT).as_posix() not in OPTIONAL_ADAPTER_MODULES
     )
+
+
+def _foreign_imports(module: Path) -> set[str]:
+    stdlib = set(sys.stdlib_module_names)
+    return {
+        root for root in _imported_roots(module) if root not in stdlib and root != "agentboundary"
+    }
 
 
 def _imported_roots(module: Path) -> set[str]:
@@ -97,20 +138,56 @@ class TestTheAuthorisationPathIsDependencyFree:
         )
 
     def test_no_module_on_the_authorisation_path_imports_a_third_party_package(self) -> None:
-        stdlib = set(sys.stdlib_module_names)
         offenders: dict[str, set[str]] = {}
         for module in _authorisation_path_modules():
-            foreign = {
-                root
-                for root in _imported_roots(module)
-                if root not in stdlib and root != "agentboundary"
-            }
+            foreign = _foreign_imports(module)
             if foreign:
                 offenders[str(module.relative_to(REPO_ROOT))] = foreign
         assert not offenders, (
-            f"third-party imports outside the optional adapter: {offenders}. "
+            f"third-party imports outside the optional adapters: {offenders}. "
             "An empty dependency list means nothing if the code imports anyway."
         )
+
+    def test_only_the_declared_binding_modules_import_one_inside_an_optional_subpackage(
+        self,
+    ) -> None:
+        """Excluding a subpackage must not exclude everything inside it.
+
+        `mcp/` and `runner/` each hold a thin binding that needs its SDK, and
+        alongside it the code that decides something -- `mcp/server.py`
+        assembles the guard pipeline, `runner/session.py` decides the session's
+        tool surface. Those are guarded here, so widening the coarse exclusion
+        at N-50 did not quietly widen what it permits.
+        """
+        offenders: dict[str, set[str]] = {}
+        for module in _optional_subpackage_modules():
+            foreign = _foreign_imports(module)
+            if foreign:
+                offenders[str(module.relative_to(REPO_ROOT))] = foreign
+        assert not offenders, (
+            f"third-party imports in an optional subpackage outside its declared "
+            f"binding modules: {offenders}. Either move the import into one of "
+            f"{sorted(OPTIONAL_ADAPTER_MODULES)}, or add the module to that set and "
+            f"say why -- see ADR-0009 §6."
+        )
+
+    def test_every_declared_binding_module_exists(self) -> None:
+        """A pin naming a deleted file silently stops guarding anything."""
+        missing = sorted(
+            name for name in OPTIONAL_ADAPTER_MODULES if not (PACKAGE_ROOT / name).is_file()
+        )
+        assert not missing, f"OPTIONAL_ADAPTER_MODULES names files that do not exist: {missing}"
+
+    def test_the_surface_deciding_modules_are_guarded_rather_than_excluded(self) -> None:
+        """Name them, so the coverage cannot be lost by renaming a directory."""
+        guarded = {
+            path.relative_to(PACKAGE_ROOT).as_posix() for path in _authorisation_path_modules()
+        }
+        guarded |= {
+            path.relative_to(PACKAGE_ROOT).as_posix() for path in _optional_subpackage_modules()
+        }
+        for module in ("mcp/server.py", "runner/session.py", "runner/__main__.py"):
+            assert module in guarded, f"{module} decides something and must stay guarded"
 
     def test_the_check_would_notice_a_third_party_import(self, tmp_path: Path) -> None:
         """The guard above passes on a clean tree; prove it can fail."""
