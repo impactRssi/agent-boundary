@@ -1,0 +1,7 @@
+{
+  "period": "2026-03",
+  "items": [
+    {"description": "rail fare", "amount": "$12.50"},
+    {"description": "annual conference pass", "amount": "$1,250.00"}
+  ]
+}

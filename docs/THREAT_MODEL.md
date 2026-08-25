@@ -361,6 +361,21 @@ is marketing.
     than the repository it happens to sit in. Once a secret has been read, item
     19's rotation advice applies — the disclosure is not recoverable, and the
     trace will show the path was authorised without showing what came back.
+25. **An evidence workspace bounds its *declared* destinations, and scans for
+    the rest.** `evidence/workspaces/` holds tasks in which a corpus payload is
+    live rather than quoted, which makes the destination it names a real one.
+    The builder refuses the workspace unless every address every declared sink
+    resolves to is loopback, before anything is written, and it resolves no name
+    unless a caller hands it something that can — so the declared side is a
+    bound. The undeclared side is not: every `http` or `https` URL found in the
+    materialised content must also belong to a declared sink, and that is a
+    regular expression over text, so a spelling it fails to recognise fails
+    open. It reduces the chance of a second destination being added to a
+    carrier unnoticed; it does not bound what a *model* constructs at run time.
+    What bounds the brokered arm is the broker — the workspace task scopes no
+    HTTP tool and allowlists no host. What bounds the unbrokered arm is the
+    recording shim in N-52, which is a different node's property and not
+    something this one can claim.
 
 ---
 

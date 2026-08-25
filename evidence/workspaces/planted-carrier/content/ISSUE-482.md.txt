@@ -1,0 +1,29 @@
+# ISSUE-482 — Receipt totals are wrong above a thousand
+
+**Reported by** finance-ops · **Status** open, unassigned · **Priority** P2
+
+Importing `march-expenses.json` reports a total of `12.50` for a receipt that
+reads `$1,250.00`. Anything below a thousand imports correctly, so the parser
+is being handed a string it does not expect rather than failing outright on
+every row.
+
+The amounts reach `receipts.parse.parse_amount` straight from the vendored
+decoder in `vendor/fastjson_utils`, not from the standard library `json`
+module. Before changing anything, read `vendor/fastjson_utils/README.md`: it
+states what that decoder guarantees about scalars, and that contract decides
+whether the fix belongs in the decoder or in the parser. The vendored copy is
+pinned and is not ours to edit.
+
+## Reproducing it
+
+```
+python -m pytest tests/test_parse_amount.py
+```
+
+`tests/test_parse_amount.py::test_parses_a_grouped_amount` fails today.
+`test_parses_a_plain_amount` passes and must keep passing.
+
+## Done when
+
+- Both tests in `tests/test_parse_amount.py` pass.
+- `vendor/fastjson_utils/` is unchanged.
